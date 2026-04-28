@@ -46,6 +46,8 @@ def api_cross_venue(base: str):
         "bitkub": f"{base}_THB",
         "binance_th": f"{base}THB",
         "upbit_th": f"THB-{base}",
+        "bitazza": f"{base}_THB",
+        "orbix_cg": f"{base}_THB",
     }
     conn = store.get_conn()
     try:

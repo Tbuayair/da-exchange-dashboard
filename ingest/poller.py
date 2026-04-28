@@ -8,7 +8,7 @@ import sys
 import time
 
 from . import store
-from .adapters import binance_th, bitkub, upbit_th
+from .adapters import binance_th, bitkub, coingecko, upbit_th
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,14 +80,31 @@ def poll_upbit_th(conn) -> int:
     return n
 
 
+def poll_coingecko_venue(conn, venue_label: str, exchange_id: str) -> int:
+    raw = coingecko.fetch_tickers(exchange_id)
+    tickers = coingecko.normalize_thb_tickers(raw, venue_label)
+    n = store.insert_tickers(conn, tickers)
+    log.info("%s (cg=%s): %d THB tickers stored", venue_label, exchange_id, n)
+    return n
+
+
 def run_once() -> None:
     conn = store.get_conn()
     try:
-        for name, fn in [("bitkub", poll_bitkub), ("binance_th", poll_binance_th), ("upbit_th", poll_upbit_th)]:
+        for name, fn in [
+            ("bitkub", poll_bitkub),
+            ("binance_th", poll_binance_th),
+            ("upbit_th", poll_upbit_th),
+        ]:
             try:
                 fn(conn)
             except Exception as e:
                 log.error("%s poll failed: %s", name, e)
+        for venue_label, exchange_id in coingecko.EXCHANGE_IDS.items():
+            try:
+                poll_coingecko_venue(conn, venue_label, exchange_id)
+            except Exception as e:
+                log.error("%s (cg) poll failed: %s", venue_label, e)
     finally:
         conn.close()
 
