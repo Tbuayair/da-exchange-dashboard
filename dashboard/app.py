@@ -42,25 +42,26 @@ def api_depth(venue: str, symbol: str):
 def api_cross_venue(base: str):
     """Compare price for one base asset across venues (THB quote only)."""
     base = base.upper()
-    bitkub_sym = f"{base}_THB"
-    binance_sym = f"{base}THB"
+    venue_symbols = {
+        "bitkub": f"{base}_THB",
+        "binance_th": f"{base}THB",
+        "upbit_th": f"THB-{base}",
+    }
     conn = store.get_conn()
     try:
         rows = store.latest_tickers(conn)
     finally:
         conn.close()
-    out = {"base": base, "venues": {}}
+    out: dict = {"base": base, "venues": {}}
     for r in rows:
-        if r["venue"] == "bitkub" and r["symbol"] == bitkub_sym:
-            out["venues"]["bitkub"] = r
-        elif r["venue"] == "binance_th" and r["symbol"] == binance_sym:
-            out["venues"]["binance_th"] = r
-    if len(out["venues"]) == 2:
-        b = out["venues"]["bitkub"]
-        bn = out["venues"]["binance_th"]
-        if b.get("last") and bn.get("last"):
-            mid = (b["last"] + bn["last"]) / 2
-            out["spread_bps"] = round((b["last"] - bn["last"]) / mid * 10000, 2)
+        expected = venue_symbols.get(r["venue"])
+        if expected and r["symbol"] == expected:
+            out["venues"][r["venue"]] = r
+    lasts = {v: t["last"] for v, t in out["venues"].items() if t.get("last")}
+    if len(lasts) >= 2:
+        mn, mx = min(lasts.values()), max(lasts.values())
+        mid = (mn + mx) / 2
+        out["max_spread_bps"] = round((mx - mn) / mid * 10000, 2)
     return jsonify(out)
 
 

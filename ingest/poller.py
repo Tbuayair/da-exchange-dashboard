@@ -8,7 +8,7 @@ import sys
 import time
 
 from . import store
-from .adapters import binance_th, bitkub
+from .adapters import binance_th, bitkub, upbit_th
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,17 +63,31 @@ def poll_binance_th(conn) -> int:
     return n
 
 
+def poll_upbit_th(conn) -> int:
+    markets = upbit_th.fetch_thb_markets()
+    if not markets:
+        log.warning("upbit_th: no THB markets discovered")
+        return 0
+    raw_tickers = upbit_th.fetch_tickers(markets)
+    obs = {ob["market"]: ob for ob in upbit_th.fetch_orderbooks(markets)}
+    tickers = [upbit_th.normalize_ticker(t, obs.get(t["market"])) for t in raw_tickers]
+    n = store.insert_tickers(conn, tickers)
+    log.info("upbit_th: %d THB tickers stored", n)
+    for t in _top_by_turnover(tickers, DEPTH_TOP_N):
+        ob = obs.get(t["symbol"])
+        if ob:
+            store.insert_depth(conn, "upbit_th", t["symbol"], upbit_th.normalize_depth(ob))
+    return n
+
+
 def run_once() -> None:
     conn = store.get_conn()
     try:
-        try:
-            poll_bitkub(conn)
-        except Exception as e:
-            log.error("bitkub poll failed: %s", e)
-        try:
-            poll_binance_th(conn)
-        except Exception as e:
-            log.error("binance_th poll failed: %s", e)
+        for name, fn in [("bitkub", poll_bitkub), ("binance_th", poll_binance_th), ("upbit_th", poll_upbit_th)]:
+            try:
+                fn(conn)
+            except Exception as e:
+                log.error("%s poll failed: %s", name, e)
     finally:
         conn.close()
 
