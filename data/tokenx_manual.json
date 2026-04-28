@@ -1,0 +1,29 @@
+{
+  "_doc": "Manually maintained Token X / ERX tokenized-securities data. Update by editing this file and refreshing the dashboard. There is no public API for these venues today (probed 2026-04-28).",
+  "last_updated": "2026-04-28",
+  "tokens": [
+    {
+      "name": "Real Estate-Backed Token (sample)",
+      "issuer": "Token X (SCBX)",
+      "status": "placeholder",
+      "last_price_thb": null,
+      "currency": "THB",
+      "notes": "Replace with live tokenized-asset entries when available. Token X currently operates as an ICO portal under SCBX; secondary trading is limited.",
+      "source": "https://tokenx.finance/projects"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "Token X",
+      "url": "https://tokenx.finance/",
+      "license": "Thai SEC ICO Portal",
+      "data_status": "no public API; manual entry only"
+    },
+    {
+      "name": "ERX",
+      "url": "https://erx.io/",
+      "license": "Thai SEC Digital Token Exchange",
+      "data_status": "site is a placeholder; no live trading feed found"
+    }
+  ]
+}

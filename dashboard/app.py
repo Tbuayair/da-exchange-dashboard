@@ -1,4 +1,5 @@
-"""Flask dashboard for Thai digital asset exchanges (Bitkub, Binance TH)."""
+"""Flask dashboard for Thai digital asset exchanges."""
+import json
 import sys
 from pathlib import Path
 
@@ -6,7 +7,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from flask import Flask, jsonify, render_template
 
+from dashboard import insights
 from ingest import store
+
+PROJECT_ROOT = Path(__file__).parent.parent
+TOKENX_FILE = PROJECT_ROOT / "data" / "tokenx_manual.json"
 
 app = Flask(__name__)
 
@@ -65,6 +70,47 @@ def api_cross_venue(base: str):
         mid = (mn + mx) / 2
         out["max_spread_bps"] = round((mx - mn) / mid * 10000, 2)
     return jsonify(out)
+
+
+@app.route("/api/tokenx")
+def api_tokenx():
+    """Manually maintained tokenized-securities data (no public API for ERX/Token X)."""
+    if not TOKENX_FILE.exists():
+        return jsonify({"error": "tokenx_manual.json not found", "tokens": []}), 404
+    with TOKENX_FILE.open() as f:
+        return jsonify(json.load(f))
+
+
+@app.route("/api/insights")
+def api_insights():
+    conn = store.get_conn()
+    try:
+        rows = store.latest_tickers(conn)
+        depth_rows = conn.execute("""
+            SELECT d.venue, d.symbol, d.bids_json, d.asks_json
+            FROM depth_snapshots d
+            JOIN (
+                SELECT venue, symbol, MAX(ts) AS max_ts FROM depth_snapshots
+                GROUP BY venue, symbol
+            ) m ON m.venue = d.venue AND m.symbol = d.symbol AND m.max_ts = d.ts
+        """).fetchall()
+    finally:
+        conn.close()
+
+    imbalances = []
+    for venue, symbol, bids_json, asks_json in depth_rows:
+        imb = insights.depth_imbalance(bids_json, asks_json)
+        if imb is not None:
+            imbalances.append({"venue": venue, "symbol": symbol, **imb})
+    imbalances.sort(key=lambda r: abs(r["imbalance"]), reverse=True)
+
+    return jsonify({
+        "cross_venue_spreads": insights.cross_venue_summary(rows),
+        "top_turnover": insights.top_turnover(rows, 20),
+        "top_movers": insights.top_movers(rows, 10),
+        "venue_concentration": insights.venue_concentration(rows),
+        "depth_imbalance": imbalances[:15],
+    })
 
 
 if __name__ == "__main__":

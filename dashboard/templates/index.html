@@ -82,6 +82,40 @@
       font-size: 11px;
       color: var(--muted);
     }
+    .insights {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .card h3 .hint { font-size: 11px; font-weight: 400; text-transform: none; opacity: 0.7; }
+    .mini { background: transparent; }
+    .mini th, .mini td { padding: 6px 8px; font-size: 12px; border-bottom-color: var(--border); }
+    .mini th { background: transparent; }
+    .section-h { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; margin: 0 0 12px; }
+    .imb-bar { display: inline-block; height: 6px; background: var(--surface-2); border-radius: 3px; vertical-align: middle; position: relative; width: 60px; }
+    .imb-bar-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+    .imb-bar-fill.up { background: var(--up); left: 50%; }
+    .imb-bar-fill.down { background: var(--down); right: 50%; }
+    .tokenx-meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+    .empty-tab { padding: 40px; text-align: center; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -97,7 +131,27 @@
       <div class="tab" data-venue="upbit_th">Upbit TH</div>
       <div class="tab" data-venue="bitazza">Bitazza</div>
       <div class="tab" data-venue="orbix_cg">Orbix</div>
+      <div class="tab" data-venue="tokenx">Token X / ERX</div>
     </div>
+    <section id="insights" class="insights">
+      <div class="card">
+        <h3>Cross-Venue Spreads <span class="hint">top 8 by bps</span></h3>
+        <table class="mini"><thead><tr><th>Base</th><th>Venues</th><th>Spread (bps)</th><th>Cheap → Rich</th><th>Total 24h</th></tr></thead><tbody id="ins-spread"></tbody></table>
+      </div>
+      <div class="card">
+        <h3>Depth Imbalance <span class="hint">±1% of mid · L1+L2</span></h3>
+        <table class="mini"><thead><tr><th>Venue</th><th>Symbol</th><th>Bid (THB)</th><th>Ask (THB)</th><th>Imb</th></tr></thead><tbody id="ins-imb"></tbody></table>
+      </div>
+      <div class="card">
+        <h3>Top Movers 24h <span class="hint">gainers / losers</span></h3>
+        <table class="mini"><thead><tr><th>Venue</th><th>Symbol</th><th>Last</th><th>Δ%</th></tr></thead><tbody id="ins-mov"></tbody></table>
+      </div>
+      <div class="card">
+        <h3>Venue Concentration <span class="hint">HHI by base</span></h3>
+        <table class="mini"><thead><tr><th>Base</th><th>HHI</th><th>Top venue</th><th>Total 24h</th></tr></thead><tbody id="ins-hhi"></tbody></table>
+      </div>
+    </section>
+    <h2 class="section-h">Tickers</h2>
     <table id="tbl">
       <thead>
         <tr>
@@ -116,10 +170,13 @@
     <div class="empty" id="empty" style="display:none">
       No snapshots yet. Run <code>python -m ingest.poller --once</code> first.
     </div>
+    <div id="tokenx-panel" style="display:none"></div>
   </main>
   <script>
     let currentVenue = "all";
     let cachedRows = [];
+    let cachedInsights = null;
+    let cachedTokenx = null;
 
     function fmt(n, dp = 2) {
       if (n === null || n === undefined) return "—";
@@ -177,20 +234,161 @@
     }
 
     function render() {
+      const tableEl = document.getElementById("tbl");
+      const insightsEl = document.getElementById("insights");
+      const sectionH = document.querySelector(".section-h");
+      const emptyEl = document.getElementById("empty");
+      const tokenxEl = document.getElementById("tokenx-panel");
+      if (currentVenue === "tokenx") {
+        tableEl.style.display = "none";
+        insightsEl.style.display = "none";
+        if (sectionH) sectionH.style.display = "none";
+        emptyEl.style.display = "none";
+        tokenxEl.style.display = "block";
+        return;
+      }
+      tokenxEl.style.display = "none";
+      tableEl.style.display = "";
+      insightsEl.style.display = currentVenue === "all" ? "" : "none";
+      if (sectionH) sectionH.style.display = "";
       const rows = currentVenue === "all"
         ? cachedRows
         : cachedRows.filter(r => r.venue === currentVenue);
       rows.sort((a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0));
       const tbody = document.querySelector("#tbl tbody");
       tbody.replaceChildren(...rows.map(makeRow));
-      document.getElementById("empty").style.display = rows.length ? "none" : "block";
+      emptyEl.style.display = rows.length ? "none" : "block";
+    }
+
+    function renderInsights(d) {
+      const spreadBody = document.getElementById("ins-spread");
+      spreadBody.replaceChildren(...d.cross_venue_spreads.slice(0, 8).map(r => {
+        const tr = document.createElement("tr");
+        tr.appendChild(makeCell(r.base));
+        tr.appendChild(makeCell(String(r.n_venues)));
+        tr.appendChild(makeCell(fmt(r.spread_bps, 1)));
+        tr.appendChild(makeCell(`${r.cheap_venue} → ${r.rich_venue}`));
+        tr.appendChild(makeCell(fmtBig(r.total_turnover_24h)));
+        return tr;
+      }));
+
+      const imbBody = document.getElementById("ins-imb");
+      imbBody.replaceChildren(...d.depth_imbalance.slice(0, 8).map(r => {
+        const tr = document.createElement("tr");
+        tr.appendChild(makeCell(r.venue));
+        tr.appendChild(makeCell(r.symbol));
+        tr.appendChild(makeCell(fmtBig(r.bid_value_thb)));
+        tr.appendChild(makeCell(fmtBig(r.ask_value_thb)));
+        const td = document.createElement("td");
+        td.textContent = (r.imbalance > 0 ? "+" : "") + r.imbalance.toFixed(2);
+        td.className = r.imbalance > 0 ? "up" : "down";
+        tr.appendChild(td);
+        return tr;
+      }));
+
+      const movBody = document.getElementById("ins-mov");
+      const top5 = (d.top_movers.gainers || []).slice(0, 5);
+      const bot5 = (d.top_movers.losers || []).slice(0, 5);
+      movBody.replaceChildren(...[...top5, ...bot5].map(r => {
+        const tr = document.createElement("tr");
+        tr.appendChild(makeCell(r.venue));
+        tr.appendChild(makeCell(r.symbol));
+        tr.appendChild(makeCell(fmt(r.last, 4)));
+        const td = document.createElement("td");
+        td.textContent = (r.change_pct_24h > 0 ? "+" : "") + r.change_pct_24h.toFixed(2) + "%";
+        td.className = r.change_pct_24h > 0 ? "up" : "down";
+        tr.appendChild(td);
+        return tr;
+      }));
+
+      const hhiBody = document.getElementById("ins-hhi");
+      hhiBody.replaceChildren(...d.venue_concentration.slice(0, 8).map(r => {
+        const top = Object.entries(r.shares).sort((a, b) => b[1] - a[1])[0];
+        const tr = document.createElement("tr");
+        tr.appendChild(makeCell(r.base));
+        tr.appendChild(makeCell(r.hhi.toFixed(2)));
+        tr.appendChild(makeCell(`${top[0]} ${(top[1] * 100).toFixed(0)}%`));
+        tr.appendChild(makeCell(fmtBig(r.total_turnover_24h)));
+        return tr;
+      }));
+    }
+
+    function renderTokenx(d) {
+      const panel = document.getElementById("tokenx-panel");
+      panel.replaceChildren();
+      const meta = document.createElement("div");
+      meta.className = "tokenx-meta";
+      meta.textContent = `Last updated: ${d.last_updated || "—"} · No public market-data API exists for ERX or Token X today; this tab is manually maintained at data/tokenx_manual.json`;
+      panel.appendChild(meta);
+      const exTitle = document.createElement("div");
+      exTitle.className = "section-h";
+      exTitle.textContent = "Venues";
+      panel.appendChild(exTitle);
+      const exTbl = document.createElement("table");
+      const exThead = document.createElement("thead");
+      const exHrow = document.createElement("tr");
+      ["Name","License","Data Status","URL"].forEach(h => { const th = document.createElement("th"); th.textContent = h; exHrow.appendChild(th); });
+      exThead.appendChild(exHrow); exTbl.appendChild(exThead);
+      const exBody = document.createElement("tbody");
+      (d.exchanges || []).forEach(e => {
+        const tr = document.createElement("tr");
+        tr.appendChild(makeCell(e.name));
+        tr.appendChild(makeCell(e.license || "—"));
+        tr.appendChild(makeCell(e.data_status || "—"));
+        const td = document.createElement("td");
+        const a = document.createElement("a");
+        a.href = e.url || "#"; a.target = "_blank"; a.rel = "noopener";
+        a.textContent = e.url || "—"; a.style.color = "var(--accent)";
+        td.appendChild(a);
+        tr.appendChild(td);
+        exBody.appendChild(tr);
+      });
+      exTbl.appendChild(exBody);
+      panel.appendChild(exTbl);
+
+      const tkTitle = document.createElement("div");
+      tkTitle.className = "section-h";
+      tkTitle.style.marginTop = "20px";
+      tkTitle.textContent = `Tokens (${(d.tokens || []).length})`;
+      panel.appendChild(tkTitle);
+      if (!(d.tokens || []).length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-tab";
+        empty.textContent = "No tokens recorded yet — edit data/tokenx_manual.json";
+        panel.appendChild(empty);
+        return;
+      }
+      const tkTbl = document.createElement("table");
+      const tkThead = document.createElement("thead");
+      const tkHrow = document.createElement("tr");
+      ["Name","Issuer","Status","Last (THB)","Notes"].forEach(h => { const th = document.createElement("th"); th.textContent = h; tkHrow.appendChild(th); });
+      tkThead.appendChild(tkHrow); tkTbl.appendChild(tkThead);
+      const tkBody = document.createElement("tbody");
+      (d.tokens || []).forEach(t => {
+        const tr = document.createElement("tr");
+        tr.appendChild(makeCell(t.name || "—"));
+        tr.appendChild(makeCell(t.issuer || "—"));
+        tr.appendChild(makeCell(t.status || "—"));
+        tr.appendChild(makeCell(t.last_price_thb !== null && t.last_price_thb !== undefined ? fmt(t.last_price_thb, 2) : "—"));
+        tr.appendChild(makeCell(t.notes || "—"));
+        tkBody.appendChild(tr);
+      });
+      tkTbl.appendChild(tkBody);
+      panel.appendChild(tkTbl);
     }
 
     async function refresh() {
       try {
-        const r = await fetch("/api/tickers");
-        cachedRows = await r.json();
+        const [tickers, ins, tx] = await Promise.all([
+          fetch("/api/tickers").then(r => r.json()),
+          fetch("/api/insights").then(r => r.json()),
+          cachedTokenx ? Promise.resolve(cachedTokenx) : fetch("/api/tokenx").then(r => r.json()).catch(() => null),
+        ]);
+        cachedRows = tickers;
+        cachedInsights = ins;
+        if (tx) { cachedTokenx = tx; renderTokenx(tx); }
         document.getElementById("ts").textContent = new Date().toLocaleTimeString();
+        renderInsights(ins);
         render();
       } catch (e) {
         console.error("refresh failed", e);
