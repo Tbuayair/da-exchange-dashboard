@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>InnovestX DA · TH Digital Asset Exchanges</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  <link rel="stylesheet" href="{{ url_for(bp_name + '.static', filename='css/app.css') }}" />
 </head>
 <body>
   <header class="app-header">
-    <div class="brand" onclick="location.href='/'">
+    <div class="brand" onclick="location.href={{ url_for(bp_name + '.index')|tojson }}">
       <div class="brand-mark">IX</div>
       <div>
         <div class="brand-name">InnovestX</div>
@@ -78,6 +78,8 @@
   </main>
 
   <script>
+    const URL_PREFIX = {{ url_for(bp_name + '.index')|tojson }}.replace(/\/$/, "");
+    function api(path) { return URL_PREFIX + path; }
     let currentVenue = "all";
     let cachedRows = [];
     let cachedInsights = null;
@@ -216,7 +218,7 @@
 
       const symTd = document.createElement("td");
       const link = document.createElement("a");
-      link.href = `/symbol/${encodeURIComponent(base)}`;
+      link.href = `${URL_PREFIX}/symbol/${encodeURIComponent(base)}`;
       const strong = document.createElement("strong");
       strong.textContent = base;
       link.appendChild(strong);
@@ -451,9 +453,9 @@
     async function refresh() {
       try {
         const [tickers, ins, tx] = await Promise.all([
-          fetch("/api/tickers").then(r => r.json()),
-          fetch("/api/insights").then(r => r.json()),
-          cachedTokenx ? Promise.resolve(cachedTokenx) : fetch("/api/tokenx").then(r => r.json()).catch(() => null),
+          fetch(api("/api/tickers")).then(r => r.json()),
+          fetch(api("/api/insights")).then(r => r.json()),
+          cachedTokenx ? Promise.resolve(cachedTokenx) : fetch(api("/api/tokenx")).then(r => r.json()).catch(() => null),
         ]);
         cachedRows = tickers;
         cachedInsights = ins;

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "da-exchange-dashboard"
+version = "0.1.0"
+description = "InnovestX DA — Thai digital-asset exchange monitoring dashboard (Flask Blueprint)"
+requires-python = ">=3.10"
+authors = [{ name = "Anthony B" }]
+license = { text = "Proprietary" }
+dependencies = [
+    "flask>=3.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+serve = ["gunicorn>=21.2.0"]
+
+[tool.setuptools]
+packages = ["dashboard", "dashboard.data", "ingest", "ingest.adapters", "da_exchange_dashboard"]
+
+[tool.setuptools.package-data]
+dashboard = [
+    "templates/*.html",
+    "static/css/*.css",
+    "static/**/*",
+    "data/*.json",
+]

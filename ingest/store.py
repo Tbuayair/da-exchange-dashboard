@@ -1,10 +1,14 @@
 """SQLite snapshot store for ticker (L1+turnover) and depth (L2) data."""
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "data" / "snapshots.db"
+# Allow override for deployments where the package lives in a read-only location
+# (e.g. claude-projects on Koyeb where this repo is pip-installed into site-packages).
+_DEFAULT_DB = Path(__file__).parent.parent / "data" / "snapshots.db"
+DB_PATH = Path(os.environ.get("DA_DB_PATH", _DEFAULT_DB))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ticker_snapshots (

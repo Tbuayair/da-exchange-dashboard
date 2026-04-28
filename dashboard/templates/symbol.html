@@ -4,11 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ base }}/THB · InnovestX DA</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+  <link rel="stylesheet" href="{{ url_for(bp_name + '.static', filename='css/app.css') }}" />
 </head>
 <body>
   <header class="app-header">
-    <div class="brand" onclick="location.href='/'">
+    <div class="brand" onclick="location.href={{ url_for(bp_name + '.index')|tojson }}">
       <div class="brand-mark">IX</div>
       <div>
         <div class="brand-name">InnovestX</div>
@@ -23,7 +23,7 @@
       <input id="symbol-jump" type="search" class="search-input" placeholder="Jump to base (BTC, ETH, USDT, …)" autocomplete="off" aria-label="Jump to symbol detail" />
     </div>
     <div class="header-spacer"></div>
-    <a href="/" class="header-meta">← back to dashboard</a>
+    <a href="{{ url_for(bp_name + '.index') }}" class="header-meta">← back to dashboard</a>
   </header>
 
   <main>
@@ -89,6 +89,8 @@
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
   <script>
     const BASE = {{ base | tojson }};
+    const URL_PREFIX = {{ url_for(bp_name + '.index')|tojson }}.replace(/\/$/, "");
+    function api(path) { return URL_PREFIX + path; }
     let venue = "bitkub";
     let interval = "1d";
     let chart, candleSeries, volumeSeries;
@@ -195,7 +197,7 @@
     }
 
     async function loadKlines() {
-      const r = await fetch(`/api/klines/${venue}/${BASE}?interval=${interval}&limit=200`);
+      const r = await fetch(api(`/api/klines/${venue}/${BASE}?interval=${interval}&limit=200`));
       const d = await r.json();
       const bars = (d.bars || []).filter(b => b.open != null);
       cachedBars = bars;
@@ -277,7 +279,7 @@
     async function loadVolumeCharts() {
       const venues = ["bitazza", "orbix_cg"];
       const results = await Promise.all(venues.map(v =>
-        fetch(`/api/volume_chart/${v}?days=14`).then(r => r.json()).catch(() => null)
+        fetch(api(`/api/volume_chart/${v}?days=14`)).then(r => r.json()).catch(() => null)
       ));
       const out = [];
       results.forEach((d, i) => {
@@ -329,7 +331,7 @@
     document.getElementById("symbol-jump").addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         const v = e.target.value.trim().toUpperCase();
-        if (v) location.href = `/symbol/${encodeURIComponent(v)}`;
+        if (v) location.href = `${URL_PREFIX}/symbol/${encodeURIComponent(v)}`;
       } else if (e.key === "Escape") {
         e.target.value = "";
       }
