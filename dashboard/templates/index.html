@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TH Digital Asset Exchanges — Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2129;
+      --surface-2: #232c37;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #8b6fff;
+      --up: #16c784;
+      --down: #ea3943;
+      --border: #2a323d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+    }
+    header {
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+    header .meta { color: var(--muted); font-size: 12px; }
+    main { padding: 24px 28px; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 10px 14px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    th:first-child, td:first-child { text-align: left; }
+    th {
+      background: var(--surface-2);
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    tr:hover { background: var(--surface-2); }
+    .up { color: var(--up); }
+    .down { color: var(--down); }
+    .empty { padding: 60px; text-align: center; color: var(--muted); }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--surface-2);
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TH Digital Asset Exchanges</h1>
+    <div class="meta">Last update: <span id="ts">—</span> &nbsp;·&nbsp; auto-refresh 60s</div>
+  </header>
+  <main>
+    <div class="tabs">
+      <div class="tab active" data-venue="all">All</div>
+      <div class="tab" data-venue="bitkub">Bitkub</div>
+      <div class="tab" data-venue="binance_th">Binance TH</div>
+    </div>
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Venue</th>
+          <th>Last</th>
+          <th>Bid</th>
+          <th>Ask</th>
+          <th>Spread (bps)</th>
+          <th>24h Change</th>
+          <th>24h Turnover (THB)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">
+      No snapshots yet. Run <code>python -m ingest.poller --once</code> first.
+    </div>
+  </main>
+  <script>
+    let currentVenue = "all";
+    let cachedRows = [];
+
+    function fmt(n, dp = 2) {
+      if (n === null || n === undefined) return "—";
+      return Number(n).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    }
+    function fmtBig(n) {
+      if (n === null || n === undefined) return "—";
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(2) + "K";
+      return n.toFixed(0);
+    }
+    function spreadBps(bid, ask) {
+      if (!bid || !ask || bid <= 0) return null;
+      return ((ask - bid) / ((ask + bid) / 2)) * 10000;
+    }
+
+    function makeCell(text, className) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (className) td.className = className;
+      return td;
+    }
+
+    function makeRow(r) {
+      const sp = spreadBps(r.bid, r.ask);
+      const chg = r.change_pct_24h;
+      const chgCls = chg > 0 ? "up" : chg < 0 ? "down" : "";
+      const chgTxt = chg === null || chg === undefined
+        ? "—"
+        : (chg > 0 ? "+" : "") + fmt(chg, 2) + "%";
+
+      const tr = document.createElement("tr");
+
+      const symTd = document.createElement("td");
+      const strong = document.createElement("strong");
+      strong.textContent = r.symbol || "";
+      symTd.appendChild(strong);
+      tr.appendChild(symTd);
+
+      const venueTd = document.createElement("td");
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.textContent = r.venue || "";
+      venueTd.appendChild(pill);
+      tr.appendChild(venueTd);
+
+      tr.appendChild(makeCell(fmt(r.last, 2)));
+      tr.appendChild(makeCell(fmt(r.bid, 2)));
+      tr.appendChild(makeCell(fmt(r.ask, 2)));
+      tr.appendChild(makeCell(sp === null ? "—" : fmt(sp, 1)));
+      tr.appendChild(makeCell(chgTxt, chgCls));
+      tr.appendChild(makeCell(fmtBig(r.quote_turnover_24h)));
+      return tr;
+    }
+
+    function render() {
+      const rows = currentVenue === "all"
+        ? cachedRows
+        : cachedRows.filter(r => r.venue === currentVenue);
+      rows.sort((a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0));
+      const tbody = document.querySelector("#tbl tbody");
+      tbody.replaceChildren(...rows.map(makeRow));
+      document.getElementById("empty").style.display = rows.length ? "none" : "block";
+    }
+
+    async function refresh() {
+      try {
+        const r = await fetch("/api/tickers");
+        cachedRows = await r.json();
+        document.getElementById("ts").textContent = new Date().toLocaleTimeString();
+        render();
+      } catch (e) {
+        console.error("refresh failed", e);
+      }
+    }
+
+    document.querySelectorAll(".tab").forEach(el => {
+      el.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+        el.classList.add("active");
+        currentVenue = el.dataset.venue;
+        render();
+      });
+    });
+
+    refresh();
+    setInterval(refresh, 60000);
+  </script>
+</body>
+</html>
