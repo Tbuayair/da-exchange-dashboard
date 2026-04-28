@@ -64,6 +64,24 @@ def normalize_thb_tickers(raw_tickers: list[dict], venue_label: str) -> list[dic
     return out
 
 
+def fetch_volume_chart(exchange_id: str, days: int = 14) -> list[dict]:
+    """Daily volume series for an exchange. Free tier supports up to 31 days.
+
+    Response: [[ts_ms, volume_btc_string], ...].
+    Returns canonical [{ts_ms, volume_btc}, ...].
+    """
+    r = requests.get(
+        f"{BASE}/exchanges/{exchange_id}/volume_chart",
+        params={"days": days},
+        timeout=15,
+    )
+    r.raise_for_status()
+    out = []
+    for ts, v in r.json():
+        out.append({"ts_ms": int(ts), "volume_btc": _f(v)})
+    return out
+
+
 def _f(v):
     if v is None or v == "":
         return None

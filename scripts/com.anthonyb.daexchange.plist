@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd template for the DA-exchange poller. To install:
+
+    cp scripts/com.anthonyb.daexchange.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.anthonyb.daexchange.plist
+
+  To stop / uninstall:
+
+    launchctl unload ~/Library/LaunchAgents/com.anthonyb.daexchange.plist
+    rm ~/Library/LaunchAgents/com.anthonyb.daexchange.plist
+
+  KeepAlive=true means launchd restarts the poller if it ever exits.
+  RunAtLoad=true means it starts immediately on load and on every login.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.anthonyb.daexchange</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/anthonyb/Desktop/Claude/01-Projects/Active07_DAExchangeDashboard/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ingest.poller</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/anthonyb/Desktop/Claude/01-Projects/Active07_DAExchangeDashboard</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/anthonyb/Desktop/Claude/01-Projects/Active07_DAExchangeDashboard/data/poller.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/anthonyb/Desktop/Claude/01-Projects/Active07_DAExchangeDashboard/data/poller.log</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+</dict>
+</plist>

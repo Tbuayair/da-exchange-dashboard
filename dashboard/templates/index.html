@@ -241,9 +241,14 @@
       tr.className = "subtotal-row";
 
       const symTd = document.createElement("td");
+      const link = document.createElement("a");
+      link.href = `/symbol/${encodeURIComponent(base)}`;
+      link.style.color = "inherit";
+      link.style.textDecoration = "none";
       const strong = document.createElement("strong");
       strong.textContent = base;
-      symTd.appendChild(strong);
+      link.appendChild(strong);
+      symTd.appendChild(link);
       const cnt = document.createElement("span");
       cnt.className = "venue-count";
       cnt.textContent = `· ${venueRows.length} venue${venueRows.length > 1 ? "s" : ""}`;

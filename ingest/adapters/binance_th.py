@@ -67,6 +67,35 @@ def fetch_depth(symbol: str, limit: int = 20) -> dict:
     return r.json()
 
 
+_INTERVAL_MAP = {"1m": "1m", "5m": "5m", "15m": "15m",
+                 "1h": "1h", "4h": "4h", "1d": "1d", "1w": "1w"}
+
+
+def fetch_klines(symbol: str, interval: str = "1h", limit: int = 200) -> list[dict]:
+    """Canonical OHLCV bars. Binance kline tuple:
+    [openTime_ms, o, h, l, c, baseVolume, closeTime_ms, quoteVolume, ...]
+    """
+    iv = _INTERVAL_MAP.get(interval, "1h")
+    r = requests.get(
+        f"{BASE}/klines",
+        params={"symbol": symbol, "interval": iv, "limit": min(limit, 1000)},
+        timeout=15,
+    )
+    r.raise_for_status()
+    out = []
+    for k in r.json():
+        out.append({
+            "ts_ms": int(k[0]),
+            "open": _f(k[1]),
+            "high": _f(k[2]),
+            "low": _f(k[3]),
+            "close": _f(k[4]),
+            "base_volume": _f(k[5]),
+            "quote_turnover": _f(k[7]) if len(k) > 7 else None,
+        })
+    return out
+
+
 def _f(v):
     if v is None or v == "":
         return None

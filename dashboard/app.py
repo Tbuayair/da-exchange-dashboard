@@ -9,6 +9,17 @@ from flask import Flask, jsonify, render_template
 
 from dashboard import insights
 from ingest import store
+from ingest.adapters import binance_th as adapter_binance_th
+from ingest.adapters import bitkub as adapter_bitkub
+from ingest.adapters import coingecko as adapter_coingecko
+from ingest.adapters import upbit_th as adapter_upbit_th
+
+
+VENUE_KLINE_ADAPTERS = {
+    "bitkub": (adapter_bitkub, lambda base: f"{base}_THB"),
+    "binance_th": (adapter_binance_th, lambda base: f"{base}THB"),
+    "upbit_th": (adapter_upbit_th, lambda base: f"THB-{base}"),
+}
 
 PROJECT_ROOT = Path(__file__).parent.parent
 TOKENX_FILE = PROJECT_ROOT / "data" / "tokenx_manual.json"
@@ -111,6 +122,53 @@ def api_insights():
         "venue_concentration": insights.venue_concentration(rows),
         "depth_imbalance": imbalances[:15],
     })
+
+
+@app.route("/symbol/<base>")
+def symbol_detail(base: str):
+    return render_template("symbol.html", base=base.upper())
+
+
+@app.route("/api/klines/<venue>/<base>")
+def api_klines(venue: str, base: str):
+    """OHLCV bars for one (venue, base) pair. Query: interval (default 1h), limit (default 200)."""
+    from flask import request
+    if venue not in VENUE_KLINE_ADAPTERS:
+        return jsonify({"error": f"venue {venue} has no kline source"}), 404
+    adapter, sym_fn = VENUE_KLINE_ADAPTERS[venue]
+    interval = request.args.get("interval", "1h")
+    try:
+        limit = int(request.args.get("limit", 200))
+    except (TypeError, ValueError):
+        limit = 200
+    try:
+        bars = adapter.fetch_klines(sym_fn(base.upper()), interval=interval, limit=limit)
+    except Exception as e:
+        return jsonify({"error": str(e), "bars": []}), 502
+    return jsonify({
+        "venue": venue,
+        "base": base.upper(),
+        "interval": interval,
+        "bars": bars,
+    })
+
+
+@app.route("/api/volume_chart/<venue_label>")
+def api_volume_chart(venue_label: str):
+    """Daily exchange volume series for CoinGecko-backed venues. Query: days (default 14)."""
+    from flask import request
+    cg_id = adapter_coingecko.EXCHANGE_IDS.get(venue_label)
+    if not cg_id:
+        return jsonify({"error": f"{venue_label} is not a CoinGecko-backed venue"}), 404
+    try:
+        days = int(request.args.get("days", 14))
+    except (TypeError, ValueError):
+        days = 14
+    try:
+        series = adapter_coingecko.fetch_volume_chart(cg_id, days=days)
+    except Exception as e:
+        return jsonify({"error": str(e), "series": []}), 502
+    return jsonify({"venue": venue_label, "cg_id": cg_id, "days": days, "series": series})
 
 
 if __name__ == "__main__":

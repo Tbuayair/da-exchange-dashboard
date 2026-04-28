@@ -50,6 +50,52 @@ def fetch_depth(symbol: str, limit: int = 20) -> dict:
     return body.get("result") or {"bids": [], "asks": []}
 
 
+# Bitkub TradingView UDF history lives OUTSIDE /api/v3 — at /tradingview/history.
+# Resolution values: "1" "5" "15" "60" "240" "1D" "1W".
+_TV_BASE = "https://api.bitkub.com/tradingview"
+_RESOLUTION_MAP = {
+    "1m": "1", "5m": "5", "15m": "15",
+    "1h": "60", "4h": "240",
+    "1d": "1D", "1w": "1W",
+}
+
+
+def fetch_klines(symbol: str, interval: str = "1h", limit: int = 200) -> list[dict]:
+    """Return canonical OHLCV bars: [{ts_ms, open, high, low, close, base_volume}, ...]."""
+    import time
+    res = _RESOLUTION_MAP.get(interval, "60")
+    seconds_per_bar = {"1": 60, "5": 300, "15": 900, "60": 3600,
+                       "240": 14400, "1D": 86400, "1W": 604800}[res]
+    now = int(time.time())
+    frm = now - seconds_per_bar * (limit + 2)
+    r = requests.get(
+        f"{_TV_BASE}/history",
+        params={"symbol": symbol, "resolution": res, "from": frm, "to": now},
+        timeout=15,
+    )
+    r.raise_for_status()
+    body = r.json()
+    if body.get("s") and body["s"] != "ok":
+        return []
+    ts = body.get("t", []) or []
+    o = body.get("o", []) or []
+    h = body.get("h", []) or []
+    low_arr = body.get("l", []) or []
+    c = body.get("c", []) or []
+    v = body.get("v", []) or []
+    out = []
+    for i in range(len(ts)):
+        out.append({
+            "ts_ms": int(ts[i]) * 1000,
+            "open": _f(o[i]) if i < len(o) else None,
+            "high": _f(h[i]) if i < len(h) else None,
+            "low": _f(low_arr[i]) if i < len(low_arr) else None,
+            "close": _f(c[i]) if i < len(c) else None,
+            "base_volume": _f(v[i]) if i < len(v) else None,
+        })
+    return out[-limit:]
+
+
 def _f(v):
     if v is None or v == "":
         return None

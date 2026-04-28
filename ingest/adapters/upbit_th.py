@@ -80,6 +80,37 @@ def normalize_depth(ob: dict, depth: int = 20) -> dict:
     }
 
 
+# Upbit candle endpoints map: minutes/{1,3,5,15,30,60,240}, days, weeks, months.
+_CANDLE_PATH = {
+    "1m": ("minutes/1", None), "5m": ("minutes/5", None), "15m": ("minutes/15", None),
+    "1h": ("minutes/60", None), "4h": ("minutes/240", None),
+    "1d": ("days", None), "1w": ("weeks", None),
+}
+
+
+def fetch_klines(symbol: str, interval: str = "1h", limit: int = 200) -> list[dict]:
+    """Canonical OHLCV bars (Upbit returns most-recent-first; we reverse to oldest-first)."""
+    path, _ = _CANDLE_PATH.get(interval, ("minutes/60", None))
+    r = requests.get(
+        f"{BASE}/candles/{path}",
+        params={"market": symbol, "count": min(limit, 200)},
+        timeout=15,
+    )
+    r.raise_for_status()
+    out = []
+    for c in r.json():
+        out.append({
+            "ts_ms": int(c.get("timestamp")),
+            "open": _f(c.get("opening_price")),
+            "high": _f(c.get("high_price")),
+            "low": _f(c.get("low_price")),
+            "close": _f(c.get("trade_price")),
+            "base_volume": _f(c.get("candle_acc_trade_volume")),
+            "quote_turnover": _f(c.get("candle_acc_trade_price")),
+        })
+    return list(reversed(out))
+
+
 def _f(v):
     if v is None or v == "":
         return None
