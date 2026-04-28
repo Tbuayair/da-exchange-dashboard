@@ -3,143 +3,39 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TH Digital Asset Exchanges — Dashboard</title>
-  <style>
-    :root {
-      --bg: #0f1419;
-      --surface: #1a2129;
-      --surface-2: #232c37;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #8b6fff;
-      --up: #16c784;
-      --down: #ea3943;
-      --border: #2a323d;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 14px;
-    }
-    header {
-      padding: 20px 28px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-    }
-    header h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
-    header .meta { color: var(--muted); font-size: 12px; }
-    main { padding: 24px 28px; }
-    .tabs {
-      display: flex;
-      gap: 4px;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 20px;
-    }
-    .tab {
-      padding: 10px 16px;
-      cursor: pointer;
-      color: var(--muted);
-      border-bottom: 2px solid transparent;
-      font-weight: 500;
-    }
-    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: var(--surface);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-    th, td {
-      padding: 10px 14px;
-      text-align: right;
-      border-bottom: 1px solid var(--border);
-      font-variant-numeric: tabular-nums;
-    }
-    th:first-child, td:first-child { text-align: left; }
-    th {
-      background: var(--surface-2);
-      color: var(--muted);
-      font-weight: 500;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-    tr:hover { background: var(--surface-2); }
-    .up { color: var(--up); }
-    .down { color: var(--down); }
-    .empty { padding: 60px; text-align: center; color: var(--muted); }
-    .pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      background: var(--surface-2);
-      font-size: 11px;
-      color: var(--muted);
-    }
-    .insights {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-      gap: 16px;
-      margin-bottom: 28px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px 18px;
-    }
-    .card h3 {
-      margin: 0 0 12px;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      color: var(--muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-    }
-    .card h3 .hint { font-size: 11px; font-weight: 400; text-transform: none; opacity: 0.7; }
-    .mini { background: transparent; }
-    .mini th, .mini td { padding: 6px 8px; font-size: 12px; border-bottom-color: var(--border); }
-    .mini th { background: transparent; }
-    .section-h { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; margin: 0 0 12px; }
-    .imb-bar { display: inline-block; height: 6px; background: var(--surface-2); border-radius: 3px; vertical-align: middle; position: relative; width: 60px; }
-    .imb-bar-fill { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
-    .imb-bar-fill.up { background: var(--up); left: 50%; }
-    .imb-bar-fill.down { background: var(--down); right: 50%; }
-    .tokenx-meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
-    .empty-tab { padding: 40px; text-align: center; color: var(--muted); }
-    tr.subtotal-row { background: var(--surface-2); }
-    tr.subtotal-row:hover { background: #2a323d; }
-    tr.subtotal-row td { font-weight: 600; border-bottom-color: var(--accent); }
-    tr.subtotal-row td:first-child strong { color: var(--accent); font-size: 14px; }
-    tr.venue-row td:first-child { padding-left: 28px; color: var(--muted); }
-    tr.venue-row td:first-child strong { font-weight: 400; }
-    .venue-count { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
-  </style>
+  <title>InnovestX DA · TH Digital Asset Exchanges</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
 </head>
 <body>
-  <header>
-    <h1>TH Digital Asset Exchanges</h1>
-    <div class="meta">Last update: <span id="ts">—</span> &nbsp;·&nbsp; auto-refresh 60s</div>
+  <header class="app-header">
+    <div class="brand" onclick="location.href='/'">
+      <div class="brand-mark">IX</div>
+      <div>
+        <div class="brand-name">InnovestX</div>
+        <div class="brand-sub">DA · Exchange Monitor</div>
+      </div>
+    </div>
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input id="search" type="search" class="search-input" placeholder="Search symbol or coin (BTC, USDT, ETH, …)" autocomplete="off" aria-label="Search ticker symbols" />
+    </div>
+    <div class="header-spacer"></div>
+    <div class="header-meta">Last update <strong id="ts">—</strong> · auto-refresh 60s</div>
   </header>
   <main>
-    <div class="tabs">
-      <div class="tab active" data-venue="all">All</div>
-      <div class="tab" data-venue="bitkub">Bitkub</div>
-      <div class="tab" data-venue="binance_th">Binance TH</div>
-      <div class="tab" data-venue="upbit_th">Upbit TH</div>
-      <div class="tab" data-venue="bitazza">Bitazza</div>
-      <div class="tab" data-venue="orbix_cg">Orbix</div>
-      <div class="tab" data-venue="tokenx">Token X / ERX</div>
-    </div>
+    <nav class="tabs" role="tablist">
+      <div class="tab active" data-venue="all" role="tab">All Venues</div>
+      <div class="tab" data-venue="bitkub" role="tab">Bitkub</div>
+      <div class="tab" data-venue="binance_th" role="tab">Binance TH</div>
+      <div class="tab" data-venue="upbit_th" role="tab">Upbit TH</div>
+      <div class="tab" data-venue="bitazza" role="tab">Bitazza</div>
+      <div class="tab" data-venue="orbix_cg" role="tab">Orbix</div>
+      <div class="tab" data-venue="tokenx" role="tab">Token X / ERX</div>
+    </nav>
+
     <section id="insights" class="insights">
       <div class="card">
         <h3>Cross-Venue Spreads <span class="hint">top 8 by bps</span></h3>
@@ -158,33 +54,39 @@
         <table class="mini"><thead><tr><th>Base</th><th>HHI</th><th>Top venue</th><th>Total 24h</th></tr></thead><tbody id="ins-hhi"></tbody></table>
       </div>
     </section>
+
     <h2 class="section-h">Tickers</h2>
     <table id="tbl">
       <thead>
         <tr>
-          <th>Symbol</th>
-          <th>Venue</th>
-          <th>Last</th>
-          <th>Bid</th>
-          <th>Ask</th>
-          <th>Spread (bps)</th>
-          <th>24h Change</th>
-          <th>24h Turnover (THB)</th>
+          <th class="sortable" data-sort="symbol">Symbol</th>
+          <th class="sortable" data-sort="venue">Venue</th>
+          <th class="sortable" data-sort="last">Last</th>
+          <th class="sortable" data-sort="bid">Bid</th>
+          <th class="sortable" data-sort="ask">Ask</th>
+          <th class="sortable" data-sort="spread">Spread (bps)</th>
+          <th class="sortable" data-sort="change_pct_24h">24h Δ%</th>
+          <th class="sortable sort-desc" data-sort="quote_turnover_24h">24h Turnover (THB)</th>
         </tr>
       </thead>
       <tbody></tbody>
     </table>
     <div class="empty" id="empty" style="display:none">
-      No snapshots yet. Run <code>python -m ingest.poller --once</code> first.
+      No snapshots match. Run <code>python -m ingest.poller --once</code> or clear the search.
     </div>
     <div id="tokenx-panel" style="display:none"></div>
   </main>
+
   <script>
     let currentVenue = "all";
     let cachedRows = [];
     let cachedInsights = null;
     let cachedTokenx = null;
+    let searchQuery = "";
+    let sortKey = "quote_turnover_24h";
+    let sortDir = "desc";
 
+    // ---------- formatting ----------
     function fmt(n, dp = 2) {
       if (n === null || n === undefined) return "—";
       return Number(n).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
@@ -201,13 +103,21 @@
       return ((ask - bid) / ((ask + bid) / 2)) * 10000;
     }
 
+    // ---------- DOM helpers ----------
     function makeCell(text, className) {
       const td = document.createElement("td");
       td.textContent = text;
       if (className) td.className = className;
       return td;
     }
+    function venuePill(venue) {
+      const span = document.createElement("span");
+      span.className = "pill";
+      span.textContent = venue;
+      return span;
+    }
 
+    // ---------- canonical ----------
     function canonicalBase(venue, symbol) {
       if (!symbol) return null;
       if (venue === "binance_th" && symbol.endsWith("THB")) return symbol.slice(0, -3);
@@ -215,14 +125,76 @@
       if (symbol.endsWith("_THB")) return symbol.slice(0, -4);
       return null;
     }
-
     function avgOf(arr) {
       const valid = arr.filter(v => v !== null && v !== undefined && !Number.isNaN(v));
       return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
     }
-
     function sumOf(arr) {
       return arr.reduce((a, b) => a + (b || 0), 0);
+    }
+
+    // ---------- search filter ----------
+    function matchesSearch(r) {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      const base = (canonicalBase(r.venue, r.symbol) || "").toLowerCase();
+      const sym = (r.symbol || "").toLowerCase();
+      return sym.includes(q) || base.includes(q);
+    }
+
+    // ---------- sort ----------
+    function rowSortValue(r, key) {
+      if (key === "spread") {
+        const sp = spreadBps(r.bid, r.ask);
+        return sp === null ? Number.NEGATIVE_INFINITY : sp;
+      }
+      if (key === "symbol" || key === "venue") return (r[key] || "").toLowerCase();
+      const v = r[key];
+      return (v === null || v === undefined) ? Number.NEGATIVE_INFINITY : Number(v);
+    }
+    function compareRows(a, b) {
+      const av = rowSortValue(a, sortKey);
+      const bv = rowSortValue(b, sortKey);
+      if (typeof av === "string") {
+        const cmp = av.localeCompare(bv);
+        return sortDir === "asc" ? cmp : -cmp;
+      }
+      return sortDir === "asc" ? av - bv : bv - av;
+    }
+    function syncSortIndicators() {
+      document.querySelectorAll("#tbl th.sortable").forEach(th => {
+        th.classList.remove("sort-asc", "sort-desc");
+        if (th.dataset.sort === sortKey) th.classList.add(`sort-${sortDir}`);
+      });
+    }
+
+    // ---------- row builders ----------
+    function makeRow(r) {
+      const sp = spreadBps(r.bid, r.ask);
+      const chg = r.change_pct_24h;
+      const chgCls = chg > 0 ? "up" : chg < 0 ? "down" : "";
+      const chgTxt = chg === null || chg === undefined
+        ? "—"
+        : (chg > 0 ? "+" : "") + fmt(chg, 2) + "%";
+
+      const tr = document.createElement("tr");
+      const symTd = document.createElement("td");
+      const strong = document.createElement("strong");
+      strong.textContent = r.symbol || "";
+      symTd.appendChild(strong);
+      tr.appendChild(symTd);
+
+      const venueTd = document.createElement("td");
+      venueTd.appendChild(venuePill(r.venue || ""));
+      tr.appendChild(venueTd);
+
+      tr.appendChild(makeCell(fmt(r.last, 2)));
+      tr.appendChild(makeCell(fmt(r.bid, 2)));
+      tr.appendChild(makeCell(fmt(r.ask, 2)));
+      tr.appendChild(makeCell(sp === null ? "—" : fmt(sp, 1)));
+      tr.appendChild(makeCell(chgTxt, chgCls));
+      tr.appendChild(makeCell(fmtBig(r.quote_turnover_24h)));
+      return tr;
     }
 
     function makeSubtotalRow(base, venueRows) {
@@ -234,7 +206,9 @@
       const avgLast = avgOf(lasts);
       const avgBid = avgOf(bids);
       const avgAsk = avgOf(asks);
-      const avgSpread = (avgBid && avgAsk) ? ((avgAsk - avgBid) / ((avgAsk + avgBid) / 2)) * 10000 : null;
+      const avgSpread = (avgBid && avgAsk)
+        ? ((avgAsk - avgBid) / ((avgAsk + avgBid) / 2)) * 10000
+        : null;
       const avgChange = avgOf(changes);
 
       const tr = document.createElement("tr");
@@ -243,8 +217,6 @@
       const symTd = document.createElement("td");
       const link = document.createElement("a");
       link.href = `/symbol/${encodeURIComponent(base)}`;
-      link.style.color = "inherit";
-      link.style.textDecoration = "none";
       const strong = document.createElement("strong");
       strong.textContent = base;
       link.appendChild(strong);
@@ -256,10 +228,10 @@
       tr.appendChild(symTd);
 
       const venueTd = document.createElement("td");
-      const pill = document.createElement("span");
-      pill.className = "pill";
-      pill.textContent = "subtotal";
-      venueTd.appendChild(pill);
+      const subtotalPill = document.createElement("span");
+      subtotalPill.className = "pill accent";
+      subtotalPill.textContent = "subtotal";
+      venueTd.appendChild(subtotalPill);
       tr.appendChild(venueTd);
 
       tr.appendChild(makeCell(fmt(avgLast, 2)));
@@ -275,44 +247,14 @@
       return tr;
     }
 
-    function makeRow(r) {
-      const sp = spreadBps(r.bid, r.ask);
-      const chg = r.change_pct_24h;
-      const chgCls = chg > 0 ? "up" : chg < 0 ? "down" : "";
-      const chgTxt = chg === null || chg === undefined
-        ? "—"
-        : (chg > 0 ? "+" : "") + fmt(chg, 2) + "%";
-
-      const tr = document.createElement("tr");
-
-      const symTd = document.createElement("td");
-      const strong = document.createElement("strong");
-      strong.textContent = r.symbol || "";
-      symTd.appendChild(strong);
-      tr.appendChild(symTd);
-
-      const venueTd = document.createElement("td");
-      const pill = document.createElement("span");
-      pill.className = "pill";
-      pill.textContent = r.venue || "";
-      venueTd.appendChild(pill);
-      tr.appendChild(venueTd);
-
-      tr.appendChild(makeCell(fmt(r.last, 2)));
-      tr.appendChild(makeCell(fmt(r.bid, 2)));
-      tr.appendChild(makeCell(fmt(r.ask, 2)));
-      tr.appendChild(makeCell(sp === null ? "—" : fmt(sp, 1)));
-      tr.appendChild(makeCell(chgTxt, chgCls));
-      tr.appendChild(makeCell(fmtBig(r.quote_turnover_24h)));
-      return tr;
-    }
-
+    // ---------- main render ----------
     function render() {
       const tableEl = document.getElementById("tbl");
       const insightsEl = document.getElementById("insights");
       const sectionH = document.querySelector(".section-h");
       const emptyEl = document.getElementById("empty");
       const tokenxEl = document.getElementById("tokenx-panel");
+
       if (currentVenue === "tokenx") {
         tableEl.style.display = "none";
         insightsEl.style.display = "none";
@@ -325,23 +267,43 @@
       tableEl.style.display = "";
       insightsEl.style.display = currentVenue === "all" ? "" : "none";
       if (sectionH) sectionH.style.display = "";
+
       const tbody = document.querySelector("#tbl tbody");
+      syncSortIndicators();
+
       if (currentVenue === "all") {
         const groups = {};
         for (const r of cachedRows) {
+          if (!matchesSearch(r)) continue;
           const base = canonicalBase(r.venue, r.symbol);
           if (!base) continue;
           (groups[base] = groups[base] || []).push(r);
         }
-        const sortedBases = Object.keys(groups).sort((a, b) =>
-          sumOf(groups[b].map(r => r.quote_turnover_24h)) -
-          sumOf(groups[a].map(r => r.quote_turnover_24h))
-        );
+        // group sort key — derive an aggregate value per group for the active sort
+        function groupSortValue(rows) {
+          if (sortKey === "symbol") return canonicalBase(rows[0].venue, rows[0].symbol);
+          if (sortKey === "venue") return rows[0].venue;
+          if (sortKey === "quote_turnover_24h")
+            return sumOf(rows.map(r => r.quote_turnover_24h));
+          if (sortKey === "spread") {
+            const vals = rows.map(r => spreadBps(r.bid, r.ask)).filter(v => v !== null);
+            return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : Number.NEGATIVE_INFINITY;
+          }
+          const vals = rows.map(r => r[sortKey]).filter(v => v !== null && v !== undefined);
+          return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : Number.NEGATIVE_INFINITY;
+        }
+        const sortedBases = Object.keys(groups).sort((a, b) => {
+          const av = groupSortValue(groups[a]);
+          const bv = groupSortValue(groups[b]);
+          if (typeof av === "string") {
+            const cmp = av.localeCompare(bv);
+            return sortDir === "asc" ? cmp : -cmp;
+          }
+          return sortDir === "asc" ? av - bv : bv - av;
+        });
         const allRows = [];
         for (const base of sortedBases) {
-          const venueRows = groups[base].slice().sort(
-            (a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0)
-          );
+          const venueRows = groups[base].slice().sort(compareRows);
           allRows.push(makeSubtotalRow(base, venueRows));
           for (const r of venueRows) {
             const child = makeRow(r);
@@ -352,13 +314,14 @@
         tbody.replaceChildren(...allRows);
         emptyEl.style.display = allRows.length ? "none" : "block";
       } else {
-        const rows = cachedRows.filter(r => r.venue === currentVenue);
-        rows.sort((a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0));
+        const rows = cachedRows.filter(r => r.venue === currentVenue && matchesSearch(r));
+        rows.sort(compareRows);
         tbody.replaceChildren(...rows.map(makeRow));
         emptyEl.style.display = rows.length ? "none" : "block";
       }
     }
 
+    // ---------- insights ----------
     function renderInsights(d) {
       const spreadBody = document.getElementById("ins-spread");
       spreadBody.replaceChildren(...d.cross_venue_spreads.slice(0, 8).map(r => {
@@ -412,13 +375,15 @@
       }));
     }
 
+    // ---------- token x ----------
     function renderTokenx(d) {
       const panel = document.getElementById("tokenx-panel");
       panel.replaceChildren();
       const meta = document.createElement("div");
       meta.className = "tokenx-meta";
-      meta.textContent = `Last updated: ${d.last_updated || "—"} · No public market-data API exists for ERX or Token X today; this tab is manually maintained at data/tokenx_manual.json`;
+      meta.textContent = `Last updated ${d.last_updated || "—"} · No public market-data API exists for ERX or Token X today; this tab is manually maintained at data/tokenx_manual.json`;
       panel.appendChild(meta);
+
       const exTitle = document.createElement("div");
       exTitle.className = "section-h";
       exTitle.textContent = "Venues";
@@ -426,8 +391,11 @@
       const exTbl = document.createElement("table");
       const exThead = document.createElement("thead");
       const exHrow = document.createElement("tr");
-      ["Name","License","Data Status","URL"].forEach(h => { const th = document.createElement("th"); th.textContent = h; exHrow.appendChild(th); });
-      exThead.appendChild(exHrow); exTbl.appendChild(exThead);
+      ["Name", "License", "Data Status", "URL"].forEach(h => {
+        const th = document.createElement("th"); th.textContent = h; exHrow.appendChild(th);
+      });
+      exThead.appendChild(exHrow);
+      exTbl.appendChild(exThead);
       const exBody = document.createElement("tbody");
       (d.exchanges || []).forEach(e => {
         const tr = document.createElement("tr");
@@ -437,7 +405,7 @@
         const td = document.createElement("td");
         const a = document.createElement("a");
         a.href = e.url || "#"; a.target = "_blank"; a.rel = "noopener";
-        a.textContent = e.url || "—"; a.style.color = "var(--accent)";
+        a.textContent = e.url || "—";
         td.appendChild(a);
         tr.appendChild(td);
         exBody.appendChild(tr);
@@ -460,8 +428,11 @@
       const tkTbl = document.createElement("table");
       const tkThead = document.createElement("thead");
       const tkHrow = document.createElement("tr");
-      ["Name","Issuer","Status","Last (THB)","Notes"].forEach(h => { const th = document.createElement("th"); th.textContent = h; tkHrow.appendChild(th); });
-      tkThead.appendChild(tkHrow); tkTbl.appendChild(tkThead);
+      ["Name", "Issuer", "Status", "Last (THB)", "Notes"].forEach(h => {
+        const th = document.createElement("th"); th.textContent = h; tkHrow.appendChild(th);
+      });
+      tkThead.appendChild(tkHrow);
+      tkTbl.appendChild(tkThead);
       const tkBody = document.createElement("tbody");
       (d.tokens || []).forEach(t => {
         const tr = document.createElement("tr");
@@ -476,6 +447,7 @@
       panel.appendChild(tkTbl);
     }
 
+    // ---------- refresh + wiring ----------
     async function refresh() {
       try {
         const [tickers, ins, tx] = await Promise.all([
@@ -501,6 +473,30 @@
         currentVenue = el.dataset.venue;
         render();
       });
+    });
+
+    document.querySelectorAll("#tbl th.sortable").forEach(th => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.sort;
+        if (sortKey === key) sortDir = sortDir === "asc" ? "desc" : "asc";
+        else { sortKey = key; sortDir = (key === "symbol" || key === "venue") ? "asc" : "desc"; }
+        render();
+      });
+    });
+
+    // Search with debounce
+    let searchTimer = null;
+    document.getElementById("search").addEventListener("input", (e) => {
+      clearTimeout(searchTimer);
+      const v = e.target.value.trim();
+      searchTimer = setTimeout(() => {
+        searchQuery = v;
+        render();
+      }, 120);
+    });
+    // ESC to clear search
+    document.getElementById("search").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.target.value = ""; searchQuery = ""; render(); }
     });
 
     refresh();

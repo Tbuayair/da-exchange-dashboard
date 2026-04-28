@@ -3,99 +3,42 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ base }}/THB — Symbol Detail</title>
-  <style>
-    :root {
-      --bg: #0f1419;
-      --surface: #1a2129;
-      --surface-2: #232c37;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #8b6fff;
-      --up: #16c784;
-      --down: #ea3943;
-      --border: #2a323d;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      font-size: 14px;
-    }
-    header {
-      padding: 20px 28px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: baseline;
-      gap: 18px;
-    }
-    header h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
-    header a { color: var(--muted); text-decoration: none; font-size: 13px; }
-    header a:hover { color: var(--accent); }
-    main { padding: 24px 28px; }
-    .controls {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
-    .controls label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 8px; }
-    .controls .btn {
-      padding: 6px 12px;
-      border-radius: 6px;
-      background: var(--surface);
-      color: var(--muted);
-      cursor: pointer;
-      font-size: 12px;
-      border: 1px solid var(--border);
-      user-select: none;
-    }
-    .controls .btn.active { background: var(--accent); color: white; border-color: var(--accent); }
-    .grid {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 20px;
-      margin-bottom: 24px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 16px;
-    }
-    .card h3 {
-      margin: 0 0 12px;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    #chart { width: 100%; height: 420px; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
-    th:first-child, td:first-child { text-align: left; }
-    th { color: var(--muted); font-weight: 500; text-transform: uppercase; font-size: 11px; }
-    .up { color: var(--up); }
-    .down { color: var(--down); }
-    .empty-msg { color: var(--muted); padding: 16px; text-align: center; font-size: 12px; }
-  </style>
+  <title>{{ base }}/THB · InnovestX DA</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
 </head>
 <body>
-  <header>
-    <h1>{{ base }}/THB</h1>
-    <a href="/">← back to dashboard</a>
+  <header class="app-header">
+    <div class="brand" onclick="location.href='/'">
+      <div class="brand-mark">IX</div>
+      <div>
+        <div class="brand-name">InnovestX</div>
+        <div class="brand-sub">DA · Exchange Monitor</div>
+      </div>
+    </div>
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input id="symbol-jump" type="search" class="search-input" placeholder="Jump to base (BTC, ETH, USDT, …)" autocomplete="off" aria-label="Jump to symbol detail" />
+    </div>
+    <div class="header-spacer"></div>
+    <a href="/" class="header-meta">← back to dashboard</a>
   </header>
+
   <main>
+    <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:18px; flex-wrap: wrap;">
+      <h1 style="margin:0; font-size:22px; font-weight:700; letter-spacing:-0.01em;">{{ base }}/THB</h1>
+      <span class="pill accent">Symbol Detail</span>
+      <span id="latest-price" class="pill"></span>
+    </div>
+
     <div class="controls">
       <label>Venue</label>
       <span class="btn active" data-venue="bitkub">Bitkub</span>
       <span class="btn" data-venue="binance_th">Binance TH</span>
       <span class="btn" data-venue="upbit_th">Upbit TH</span>
-      <span style="margin-left:24px"></span>
+      <span style="margin-left:18px"></span>
       <label>Interval</label>
       <span class="btn" data-interval="1h">1h</span>
       <span class="btn" data-interval="4h">4h</span>
@@ -103,18 +46,44 @@
       <span class="btn" data-interval="1w">1w</span>
     </div>
 
-    <div class="grid">
+    <div class="grid-2">
       <div class="card">
-        <h3>Candles + Volume</h3>
+        <h3>Candles + Volume <span class="hint" id="chart-hint">200 bars</span></h3>
         <div id="chart"></div>
-        <div id="chart-empty" class="empty-msg" style="display:none">No bars returned for this venue/interval.</div>
+        <div id="chart-empty" class="empty-tab" style="display:none">No bars returned for this venue/interval.</div>
       </div>
       <div class="card">
-        <h3>Cross-Venue Volume Trend (CoinGecko, 14d)</h3>
-        <table id="vol-tbl"><thead><tr><th>Venue</th><th>Avg BTC/day</th><th>Latest</th></tr></thead><tbody></tbody></table>
-        <div id="vol-empty" class="empty-msg">Loading...</div>
+        <h3>Cross-Venue Volume Trend <span class="hint">CoinGecko · 14d</span></h3>
+        <table id="vol-tbl">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="venue">Venue</th>
+              <th class="sortable sort-desc" data-sort="avg">Avg BTC/day</th>
+              <th class="sortable" data-sort="latest">Latest</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div id="vol-empty" class="empty-tab">Loading…</div>
       </div>
     </div>
+
+    <h2 class="section-h">Daily Bars (latest 30)</h2>
+    <table id="bars-tbl">
+      <thead>
+        <tr>
+          <th class="sortable sort-desc" data-sort="ts_ms">Date</th>
+          <th class="sortable" data-sort="open">Open</th>
+          <th class="sortable" data-sort="high">High</th>
+          <th class="sortable" data-sort="low">Low</th>
+          <th class="sortable" data-sort="close">Close</th>
+          <th class="sortable" data-sort="change_pct">Δ%</th>
+          <th class="sortable" data-sort="base_volume">Volume ({{ base }})</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="bars-empty" class="empty-tab" style="display:none">No bars to show.</div>
   </main>
 
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
@@ -123,22 +92,49 @@
     let venue = "bitkub";
     let interval = "1d";
     let chart, candleSeries, volumeSeries;
+    let cachedBars = [];
+    let cachedVol = [];
+    let barSortKey = "ts_ms", barSortDir = "desc";
+    let volSortKey = "avg", volSortDir = "desc";
 
+    function fmt(n, dp = 2) {
+      if (n === null || n === undefined) return "—";
+      return Number(n).toLocaleString("en-US", { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    }
+    function fmtBig(n) {
+      if (n === null || n === undefined) return "—";
+      if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(2) + "B";
+      if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(2) + "K";
+      return n.toFixed(2);
+    }
+    function makeCell(text, className) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (className) td.className = className;
+      return td;
+    }
+    function fmtDate(ts_ms) {
+      const d = new Date(ts_ms);
+      return d.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+    }
+
+    // ---------- chart ----------
     function initChart() {
       const el = document.getElementById("chart");
       el.replaceChildren();
       chart = LightweightCharts.createChart(el, {
-        layout: { background: { color: "#1a2129" }, textColor: "#e6edf3" },
-        grid: { vertLines: { color: "#232c37" }, horzLines: { color: "#232c37" } },
-        timeScale: { borderColor: "#2a323d", timeVisible: true, secondsVisible: false },
-        rightPriceScale: { borderColor: "#2a323d" },
+        layout: { background: { color: "#181a20" }, textColor: "#eaecef" },
+        grid: { vertLines: { color: "#2b3139" }, horzLines: { color: "#2b3139" } },
+        timeScale: { borderColor: "#2b3139", timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderColor: "#2b3139" },
         crosshair: { mode: 1 },
-        height: 420,
+        height: 460,
       });
       candleSeries = chart.addCandlestickSeries({
-        upColor: "#16c784", downColor: "#ea3943",
-        borderUpColor: "#16c784", borderDownColor: "#ea3943",
-        wickUpColor: "#16c784", wickDownColor: "#ea3943",
+        upColor: "#0ecb81", downColor: "#f6465d",
+        borderUpColor: "#0ecb81", borderDownColor: "#f6465d",
+        wickUpColor: "#0ecb81", wickDownColor: "#f6465d",
       });
       volumeSeries = chart.addHistogramSeries({
         priceFormat: { type: "volume" },
@@ -148,18 +144,73 @@
       chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
     }
 
+    // ---------- klines / bars table ----------
+    function compareBars(a, b) {
+      const av = a[barSortKey], bv = b[barSortKey];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return barSortDir === "asc" ? av - bv : bv - av;
+    }
+    function syncBarSortIndicators() {
+      document.querySelectorAll("#bars-tbl th.sortable").forEach(th => {
+        th.classList.remove("sort-asc", "sort-desc");
+        if (th.dataset.sort === barSortKey) th.classList.add(`sort-${barSortDir}`);
+      });
+    }
+    function renderBarsTable() {
+      const tbody = document.querySelector("#bars-tbl tbody");
+      const empty = document.getElementById("bars-empty");
+      if (!cachedBars.length) {
+        tbody.replaceChildren();
+        empty.style.display = "block";
+        return;
+      }
+      empty.style.display = "none";
+      const enriched = cachedBars.map(b => ({
+        ...b,
+        change_pct: (b.open && b.close) ? ((b.close - b.open) / b.open) * 100 : null,
+      }));
+      enriched.sort(compareBars);
+      const recent30 = enriched.slice(0, 30);
+      const rows = recent30.map(b => {
+        const tr = document.createElement("tr");
+        const dateTd = document.createElement("td");
+        const ds = document.createElement("strong");
+        ds.textContent = fmtDate(b.ts_ms);
+        dateTd.appendChild(ds);
+        tr.appendChild(dateTd);
+        tr.appendChild(makeCell(fmt(b.open, 2)));
+        tr.appendChild(makeCell(fmt(b.high, 2)));
+        tr.appendChild(makeCell(fmt(b.low, 2)));
+        tr.appendChild(makeCell(fmt(b.close, 2)));
+        const chg = b.change_pct;
+        const chgCls = chg > 0 ? "up" : chg < 0 ? "down" : "";
+        const chgTxt = chg === null ? "—" : (chg > 0 ? "+" : "") + chg.toFixed(2) + "%";
+        tr.appendChild(makeCell(chgTxt, chgCls));
+        tr.appendChild(makeCell(fmt(b.base_volume, 4)));
+        return tr;
+      });
+      tbody.replaceChildren(...rows);
+      syncBarSortIndicators();
+    }
+
     async function loadKlines() {
       const r = await fetch(`/api/klines/${venue}/${BASE}?interval=${interval}&limit=200`);
       const d = await r.json();
       const bars = (d.bars || []).filter(b => b.open != null);
+      cachedBars = bars;
       const empty = document.getElementById("chart-empty");
+      const hint = document.getElementById("chart-hint");
       if (!bars.length) {
         empty.style.display = "block";
         if (candleSeries) candleSeries.setData([]);
         if (volumeSeries) volumeSeries.setData([]);
+        hint.textContent = "0 bars";
+        renderBarsTable();
         return;
       }
       empty.style.display = "none";
+      hint.textContent = `${bars.length} bars · ${interval}`;
       const candles = bars.map(b => ({
         time: Math.floor(b.ts_ms / 1000),
         open: b.open, high: b.high, low: b.low, close: b.close,
@@ -167,44 +218,82 @@
       const vols = bars.map(b => ({
         time: Math.floor(b.ts_ms / 1000),
         value: b.base_volume || 0,
-        color: b.close >= b.open ? "rgba(22,199,132,0.5)" : "rgba(234,57,67,0.5)",
+        color: b.close >= b.open ? "rgba(14,203,129,0.55)" : "rgba(246,70,93,0.55)",
       }));
       candleSeries.setData(candles);
       volumeSeries.setData(vols);
       chart.timeScale().fitContent();
+
+      const last = bars[bars.length - 1];
+      const tag = document.getElementById("latest-price");
+      tag.textContent = `Last ${fmt(last.close, 2)} THB`;
+      tag.className = "pill " + (last.close >= last.open ? "info" : "yellow");
+
+      renderBarsTable();
     }
 
-    async function loadVolumeCharts() {
+    // ---------- volume_chart table ----------
+    function compareVol(a, b) {
+      const av = a[volSortKey], bv = b[volSortKey];
+      if (typeof av === "string") {
+        const cmp = av.localeCompare(bv);
+        return volSortDir === "asc" ? cmp : -cmp;
+      }
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return volSortDir === "asc" ? av - bv : bv - av;
+    }
+    function syncVolSortIndicators() {
+      document.querySelectorAll("#vol-tbl th.sortable").forEach(th => {
+        th.classList.remove("sort-asc", "sort-desc");
+        if (th.dataset.sort === volSortKey) th.classList.add(`sort-${volSortDir}`);
+      });
+    }
+    function renderVolTable() {
       const tbody = document.querySelector("#vol-tbl tbody");
       const empty = document.getElementById("vol-empty");
-      tbody.replaceChildren();
+      if (!cachedVol.length) {
+        empty.style.display = "block";
+        tbody.replaceChildren();
+        return;
+      }
+      empty.style.display = "none";
+      const sorted = cachedVol.slice().sort(compareVol);
+      const rows = sorted.map(v => {
+        const tr = document.createElement("tr");
+        const venueTd = document.createElement("td");
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = v.venue;
+        venueTd.appendChild(pill);
+        tr.appendChild(venueTd);
+        tr.appendChild(makeCell(fmtBig(v.avg)));
+        tr.appendChild(makeCell(fmtBig(v.latest)));
+        return tr;
+      });
+      tbody.replaceChildren(...rows);
+      syncVolSortIndicators();
+    }
+    async function loadVolumeCharts() {
       const venues = ["bitazza", "orbix_cg"];
       const results = await Promise.all(venues.map(v =>
         fetch(`/api/volume_chart/${v}?days=14`).then(r => r.json()).catch(() => null)
       ));
-      const rows = [];
+      const out = [];
       results.forEach((d, i) => {
         if (!d || !(d.series || []).length) return;
         const vals = d.series.map(p => p.volume_btc).filter(v => v != null);
-        const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-        const latest = vals[vals.length - 1] || 0;
-        const tr = document.createElement("tr");
-        const cells = [venues[i], avg.toFixed(2), latest.toFixed(2)];
-        cells.forEach(c => {
-          const td = document.createElement("td");
-          td.textContent = c;
-          tr.appendChild(td);
+        out.push({
+          venue: venues[i],
+          avg: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
+          latest: vals[vals.length - 1] || 0,
         });
-        rows.push(tr);
       });
-      if (rows.length) {
-        empty.style.display = "none";
-        tbody.replaceChildren(...rows);
-      } else {
-        empty.textContent = "No volume_chart data available.";
-      }
+      cachedVol = out;
+      renderVolTable();
     }
 
+    // ---------- wiring ----------
     document.querySelectorAll(".btn[data-venue]").forEach(b => {
       b.addEventListener("click", () => {
         document.querySelectorAll(".btn[data-venue]").forEach(x => x.classList.remove("active"));
@@ -220,6 +309,30 @@
         interval = b.dataset.interval;
         loadKlines();
       });
+    });
+    document.querySelectorAll("#bars-tbl th.sortable").forEach(th => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.sort;
+        if (barSortKey === key) barSortDir = barSortDir === "asc" ? "desc" : "asc";
+        else { barSortKey = key; barSortDir = "desc"; }
+        renderBarsTable();
+      });
+    });
+    document.querySelectorAll("#vol-tbl th.sortable").forEach(th => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.sort;
+        if (volSortKey === key) volSortDir = volSortDir === "asc" ? "desc" : "asc";
+        else { volSortKey = key; volSortDir = (key === "venue") ? "asc" : "desc"; }
+        renderVolTable();
+      });
+    });
+    document.getElementById("symbol-jump").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        const v = e.target.value.trim().toUpperCase();
+        if (v) location.href = `/symbol/${encodeURIComponent(v)}`;
+      } else if (e.key === "Escape") {
+        e.target.value = "";
+      }
     });
 
     initChart();
