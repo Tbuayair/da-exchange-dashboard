@@ -116,6 +116,13 @@
     .imb-bar-fill.down { background: var(--down); right: 50%; }
     .tokenx-meta { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
     .empty-tab { padding: 40px; text-align: center; color: var(--muted); }
+    tr.subtotal-row { background: var(--surface-2); }
+    tr.subtotal-row:hover { background: #2a323d; }
+    tr.subtotal-row td { font-weight: 600; border-bottom-color: var(--accent); }
+    tr.subtotal-row td:first-child strong { color: var(--accent); font-size: 14px; }
+    tr.venue-row td:first-child { padding-left: 28px; color: var(--muted); }
+    tr.venue-row td:first-child strong { font-weight: 400; }
+    .venue-count { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 6px; }
   </style>
 </head>
 <body>
@@ -201,6 +208,68 @@
       return td;
     }
 
+    function canonicalBase(venue, symbol) {
+      if (!symbol) return null;
+      if (venue === "binance_th" && symbol.endsWith("THB")) return symbol.slice(0, -3);
+      if (venue === "upbit_th" && symbol.startsWith("THB-")) return symbol.slice(4);
+      if (symbol.endsWith("_THB")) return symbol.slice(0, -4);
+      return null;
+    }
+
+    function avgOf(arr) {
+      const valid = arr.filter(v => v !== null && v !== undefined && !Number.isNaN(v));
+      return valid.length ? valid.reduce((a, b) => a + b, 0) / valid.length : null;
+    }
+
+    function sumOf(arr) {
+      return arr.reduce((a, b) => a + (b || 0), 0);
+    }
+
+    function makeSubtotalRow(base, venueRows) {
+      const lasts = venueRows.map(r => r.last);
+      const bids = venueRows.map(r => r.bid);
+      const asks = venueRows.map(r => r.ask);
+      const changes = venueRows.map(r => r.change_pct_24h);
+      const turnover = sumOf(venueRows.map(r => r.quote_turnover_24h));
+      const avgLast = avgOf(lasts);
+      const avgBid = avgOf(bids);
+      const avgAsk = avgOf(asks);
+      const avgSpread = (avgBid && avgAsk) ? ((avgAsk - avgBid) / ((avgAsk + avgBid) / 2)) * 10000 : null;
+      const avgChange = avgOf(changes);
+
+      const tr = document.createElement("tr");
+      tr.className = "subtotal-row";
+
+      const symTd = document.createElement("td");
+      const strong = document.createElement("strong");
+      strong.textContent = base;
+      symTd.appendChild(strong);
+      const cnt = document.createElement("span");
+      cnt.className = "venue-count";
+      cnt.textContent = `· ${venueRows.length} venue${venueRows.length > 1 ? "s" : ""}`;
+      symTd.appendChild(cnt);
+      tr.appendChild(symTd);
+
+      const venueTd = document.createElement("td");
+      const pill = document.createElement("span");
+      pill.className = "pill";
+      pill.textContent = "subtotal";
+      venueTd.appendChild(pill);
+      tr.appendChild(venueTd);
+
+      tr.appendChild(makeCell(fmt(avgLast, 2)));
+      tr.appendChild(makeCell(fmt(avgBid, 2)));
+      tr.appendChild(makeCell(fmt(avgAsk, 2)));
+      tr.appendChild(makeCell(avgSpread === null ? "—" : fmt(avgSpread, 1)));
+      const chgCls = avgChange > 0 ? "up" : avgChange < 0 ? "down" : "";
+      const chgTxt = avgChange === null
+        ? "—"
+        : (avgChange > 0 ? "+" : "") + fmt(avgChange, 2) + "%";
+      tr.appendChild(makeCell(chgTxt, chgCls));
+      tr.appendChild(makeCell(fmtBig(turnover)));
+      return tr;
+    }
+
     function makeRow(r) {
       const sp = spreadBps(r.bid, r.ask);
       const chg = r.change_pct_24h;
@@ -251,13 +320,38 @@
       tableEl.style.display = "";
       insightsEl.style.display = currentVenue === "all" ? "" : "none";
       if (sectionH) sectionH.style.display = "";
-      const rows = currentVenue === "all"
-        ? cachedRows
-        : cachedRows.filter(r => r.venue === currentVenue);
-      rows.sort((a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0));
       const tbody = document.querySelector("#tbl tbody");
-      tbody.replaceChildren(...rows.map(makeRow));
-      emptyEl.style.display = rows.length ? "none" : "block";
+      if (currentVenue === "all") {
+        const groups = {};
+        for (const r of cachedRows) {
+          const base = canonicalBase(r.venue, r.symbol);
+          if (!base) continue;
+          (groups[base] = groups[base] || []).push(r);
+        }
+        const sortedBases = Object.keys(groups).sort((a, b) =>
+          sumOf(groups[b].map(r => r.quote_turnover_24h)) -
+          sumOf(groups[a].map(r => r.quote_turnover_24h))
+        );
+        const allRows = [];
+        for (const base of sortedBases) {
+          const venueRows = groups[base].slice().sort(
+            (a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0)
+          );
+          allRows.push(makeSubtotalRow(base, venueRows));
+          for (const r of venueRows) {
+            const child = makeRow(r);
+            child.classList.add("venue-row");
+            allRows.push(child);
+          }
+        }
+        tbody.replaceChildren(...allRows);
+        emptyEl.style.display = allRows.length ? "none" : "block";
+      } else {
+        const rows = cachedRows.filter(r => r.venue === currentVenue);
+        rows.sort((a, b) => (b.quote_turnover_24h || 0) - (a.quote_turnover_24h || 0));
+        tbody.replaceChildren(...rows.map(makeRow));
+        emptyEl.style.display = rows.length ? "none" : "block";
+      }
     }
 
     function renderInsights(d) {
