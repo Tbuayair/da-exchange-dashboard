@@ -176,6 +176,27 @@ def create_blueprint(name: str = "da") -> Blueprint:
             "bars": bars,
         })
 
+    @bp.route("/api/daily_turnover")
+    def api_daily_turnover():
+        venue = request.args.get("venue") or None
+        symbol = request.args.get("symbol") or None
+        try:
+            days = int(request.args.get("days", 30))
+        except (TypeError, ValueError):
+            days = 30
+        days = max(1, min(days, 365))
+        conn = store.get_conn()
+        try:
+            rows = store.daily_turnover_history(conn, venue=venue, symbol=symbol, days=days)
+        finally:
+            conn.close()
+        return jsonify({
+            "venue": venue,
+            "symbol": symbol,
+            "days": days,
+            "rows": rows,
+        })
+
     @bp.route("/api/volume_chart/<venue_label>")
     def api_volume_chart(venue_label: str):
         cg_id = adapter_coingecko.EXCHANGE_IDS.get(venue_label)

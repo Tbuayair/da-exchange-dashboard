@@ -105,6 +105,12 @@ def run_once() -> None:
                 poll_coingecko_venue(conn, venue_label, exchange_id)
             except Exception as e:
                 log.error("%s (cg) poll failed: %s", venue_label, e)
+        try:
+            latest = store.latest_tickers(conn)
+            written = store.upsert_daily_turnover(conn, latest)
+            log.info("daily_turnover: rolled up %d rows", written)
+        except Exception as e:
+            log.error("daily_turnover rollup failed: %s", e)
     finally:
         conn.close()
 

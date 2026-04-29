@@ -37,6 +37,23 @@ CREATE TABLE IF NOT EXISTS depth_snapshots (
     PRIMARY KEY (ts, venue, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_depth_venue_symbol ON depth_snapshots(venue, symbol);
+
+-- One row per (date, venue, symbol). Persists across redeploys when DB is on a Koyeb volume.
+-- Each cycle overwrites today's row with the latest 24h-rolling figures, so the row written
+-- closest to UTC midnight is the de-facto end-of-day snapshot.
+CREATE TABLE IF NOT EXISTS daily_turnover (
+    date TEXT NOT NULL,
+    venue TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    last_ts TEXT NOT NULL,
+    last_price REAL,
+    base_volume_24h REAL,
+    quote_turnover_24h REAL,
+    change_pct_24h REAL,
+    PRIMARY KEY (date, venue, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_venue_symbol ON daily_turnover(venue, symbol);
+CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_turnover(date);
 """
 
 
@@ -105,6 +122,72 @@ def latest_tickers(conn: sqlite3.Connection, venue: str | None = None) -> list[d
         sql += " WHERE t.venue = ?"
         args = (venue,)
     cur = conn.execute(sql, args)
+    cols = [d[0] for d in cur.description]
+    return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def _utc_date(ts_iso: str) -> str:
+    return ts_iso[:10]
+
+
+def upsert_daily_turnover(
+    conn: sqlite3.Connection,
+    tickers: list[dict],
+    ts: str | None = None,
+) -> int:
+    """Roll the latest 24h-rolling figures into one row per (date, venue, symbol).
+
+    Called every poll cycle — each call overwrites today's row, so the last
+    write before UTC midnight becomes the de-facto end-of-day record.
+    """
+    ts = ts or now_iso()
+    date = _utc_date(ts)
+    rows = [
+        (
+            date, t["venue"], t["symbol"], ts,
+            t.get("last"),
+            t.get("base_volume_24h"),
+            t.get("quote_turnover_24h"),
+            t.get("change_pct_24h"),
+        )
+        for t in tickers if t.get("symbol")
+    ]
+    conn.executemany(
+        "INSERT OR REPLACE INTO daily_turnover VALUES (?,?,?,?,?,?,?,?)",
+        rows,
+    )
+    conn.commit()
+    return len(rows)
+
+
+def daily_turnover_history(
+    conn: sqlite3.Connection,
+    venue: str | None = None,
+    symbol: str | None = None,
+    days: int = 30,
+) -> list[dict]:
+    """Return historical daily rows from the last `days` days, newest first.
+
+    Optionally filter by venue/symbol.
+    """
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=int(days) - 1)).isoformat()
+    where = ["date >= ?"]
+    args: list = [cutoff]
+    if venue:
+        where.append("venue = ?")
+        args.append(venue)
+    if symbol:
+        where.append("symbol = ?")
+        args.append(symbol)
+    sql = f"""
+    SELECT date, venue, symbol, last_ts, last_price,
+           base_volume_24h, quote_turnover_24h, change_pct_24h
+    FROM daily_turnover
+    WHERE {" AND ".join(where)}
+    ORDER BY date DESC, venue, symbol
+    """
+    cur = conn.execute(sql, tuple(args))
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
