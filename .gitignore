@@ -6,3 +6,13 @@ data/*.db
 data/*.db-journal
 .DS_Store
 *.log
+
+# Secrets — never commit
+INVXAPIKEY*
+*.key
+.env
+.env.*
+!.env.example
+
+# Local-only reference material (vendor docs, scratch notes)
+UserInput/

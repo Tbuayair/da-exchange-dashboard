@@ -8,7 +8,7 @@ import sys
 import time
 
 from . import store
-from .adapters import binance_th, bitkub, coingecko, upbit_th
+from .adapters import binance_th, bitkub, coingecko, innovestx, upbit_th
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,6 +80,36 @@ def poll_upbit_th(conn) -> int:
     return n
 
 
+def poll_innovestx(conn) -> int:
+    """Poll InnovestX (authenticated). Skips silently when API creds are missing."""
+    try:
+        symbols_payload = innovestx.fetch_symbols()
+    except innovestx.InnovestXAuthError:
+        log.info("innovestx: skipped (INVX_API_KEY/INVX_API_SECRET not set)")
+        return 0
+    thb = innovestx.thb_symbols(symbols_payload)
+    if not thb:
+        log.warning("innovestx: no THB symbols discovered")
+        return 0
+    tickers: list[dict] = []
+    for sym in thb:
+        try:
+            raw = innovestx.fetch_ticker(sym)
+            if raw:
+                tickers.append(innovestx.normalize_ticker(raw))
+        except Exception as e:
+            log.warning("innovestx ticker %s failed: %s", sym, e)
+    n = store.insert_tickers(conn, tickers)
+    log.info("innovestx: %d THB tickers stored", n)
+    for t in _top_by_turnover(tickers, DEPTH_TOP_N) or tickers[:DEPTH_TOP_N]:
+        try:
+            depth = innovestx.fetch_depth(t["symbol"])
+            store.insert_depth(conn, "innovestx", t["symbol"], depth)
+        except Exception as e:
+            log.warning("innovestx depth %s failed: %s", t["symbol"], e)
+    return n
+
+
 def poll_coingecko_venue(conn, venue_label: str, exchange_id: str) -> int:
     raw = coingecko.fetch_tickers(exchange_id)
     tickers = coingecko.normalize_thb_tickers(raw, venue_label)
@@ -95,6 +125,7 @@ def run_once() -> None:
             ("bitkub", poll_bitkub),
             ("binance_th", poll_binance_th),
             ("upbit_th", poll_upbit_th),
+            ("innovestx", poll_innovestx),
         ]:
             try:
                 fn(conn)
