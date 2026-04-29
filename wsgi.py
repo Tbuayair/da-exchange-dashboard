@@ -14,7 +14,7 @@ import logging
 import os
 import threading
 
-from dashboard.app import app  # noqa: F401  re-exported for gunicorn
+from da_exchange_dashboard.app import app  # noqa: F401  re-exported for gunicorn
 
 log = logging.getLogger("wsgi")
 logging.basicConfig(
@@ -24,7 +24,7 @@ logging.basicConfig(
 
 
 def _poll_forever():
-    from ingest.poller import run_forever
+    from da_exchange_dashboard.ingest.poller import run_forever
     try:
         run_forever()
     except Exception:

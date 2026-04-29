@@ -10,7 +10,7 @@ import logging
 import os
 import threading
 
-from dashboard.app import create_app, create_blueprint
+from .app import create_app, create_blueprint
 
 __all__ = ["create_app", "create_blueprint", "start_poller_thread"]
 
@@ -34,7 +34,7 @@ def start_poller_thread() -> bool:
         if _poller_started:
             return False
 
-        from ingest.poller import run_forever
+        from .ingest.poller import run_forever
 
         def _loop():
             try:

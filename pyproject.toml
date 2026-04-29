@@ -18,10 +18,14 @@ dependencies = [
 serve = ["gunicorn>=21.2.0"]
 
 [tool.setuptools]
-packages = ["dashboard", "dashboard.data", "ingest", "ingest.adapters", "da_exchange_dashboard"]
+packages = [
+    "da_exchange_dashboard",
+    "da_exchange_dashboard.ingest",
+    "da_exchange_dashboard.ingest.adapters",
+]
 
 [tool.setuptools.package-data]
-dashboard = [
+da_exchange_dashboard = [
     "templates/*.html",
     "static/css/*.css",
     "static/**/*",

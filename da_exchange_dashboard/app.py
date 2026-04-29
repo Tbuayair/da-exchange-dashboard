@@ -17,20 +17,16 @@ template to build fetch URLs.
 """
 import json
 import os
-import sys
 from pathlib import Path
-
-# Allow `from ingest import ...` whether installed as a package or run from src.
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from flask import Blueprint, Flask, jsonify, render_template, request
 
-from dashboard import insights
-from ingest import store
-from ingest.adapters import binance_th as adapter_binance_th
-from ingest.adapters import bitkub as adapter_bitkub
-from ingest.adapters import coingecko as adapter_coingecko
-from ingest.adapters import upbit_th as adapter_upbit_th
+from . import insights
+from .ingest import store
+from .ingest.adapters import binance_th as adapter_binance_th
+from .ingest.adapters import bitkub as adapter_bitkub
+from .ingest.adapters import coingecko as adapter_coingecko
+from .ingest.adapters import upbit_th as adapter_upbit_th
 
 
 VENUE_KLINE_ADAPTERS = {
