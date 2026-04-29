@@ -45,6 +45,6 @@ def start_poller_thread() -> bool:
         t = threading.Thread(target=_loop, name="da-poller", daemon=True)
         t.start()
         _poller_started = True
-        _log.info("DA snapshot poller thread started (db=%s)",
-                  os.environ.get("DA_DB_PATH", "default"))
+        from .ingest import db
+        _log.info("DA snapshot poller thread started (backend=%s)", db.backend_label())
         return True

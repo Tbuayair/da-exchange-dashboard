@@ -15,6 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9"]
 serve = ["gunicorn>=21.2.0"]
 
 [tool.setuptools]

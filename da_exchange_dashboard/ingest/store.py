@@ -1,28 +1,28 @@
-"""SQLite snapshot store for ticker (L1+turnover) and depth (L2) data."""
-import json
-import os
-import sqlite3
-from datetime import datetime, timezone
-from pathlib import Path
+"""Backend-agnostic snapshot store for ticker (L1+turnover) and depth (L2) data.
 
-# Allow override for deployments where the package lives in a read-only location
-# (e.g. claude-projects on Koyeb where this repo is pip-installed into site-packages).
-_DEFAULT_DB = Path(__file__).parent.parent / "data" / "snapshots.db"
-DB_PATH = Path(os.environ.get("DA_DB_PATH", _DEFAULT_DB))
+Uses db.py to pick PostgreSQL (production) or SQLite (dev) based on
+DATABASE_URL. Schema uses ON CONFLICT (works in SQLite 3.24+ and Postgres 9.5+)
+so the same SQL runs on both backends.
+"""
+import json
+from datetime import datetime, timedelta, timezone
+
+from . import db
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ticker_snapshots (
     ts TEXT NOT NULL,
     venue TEXT NOT NULL,
     symbol TEXT NOT NULL,
-    last REAL,
-    bid REAL,
-    ask REAL,
-    high_24h REAL,
-    low_24h REAL,
-    base_volume_24h REAL,
-    quote_turnover_24h REAL,
-    change_pct_24h REAL,
+    last DOUBLE PRECISION,
+    bid DOUBLE PRECISION,
+    ask DOUBLE PRECISION,
+    high_24h DOUBLE PRECISION,
+    low_24h DOUBLE PRECISION,
+    base_volume_24h DOUBLE PRECISION,
+    quote_turnover_24h DOUBLE PRECISION,
+    change_pct_24h DOUBLE PRECISION,
     PRIMARY KEY (ts, venue, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_ticker_venue_symbol ON ticker_snapshots(venue, symbol);
@@ -38,18 +38,17 @@ CREATE TABLE IF NOT EXISTS depth_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_depth_venue_symbol ON depth_snapshots(venue, symbol);
 
--- One row per (date, venue, symbol). Persists across redeploys when DB is on a Koyeb volume.
--- Each cycle overwrites today's row with the latest 24h-rolling figures, so the row written
--- closest to UTC midnight is the de-facto end-of-day snapshot.
+-- One row per (date, venue, symbol). Persists across redeploys when the
+-- underlying database is durable (Postgres on Neon).
 CREATE TABLE IF NOT EXISTS daily_turnover (
     date TEXT NOT NULL,
     venue TEXT NOT NULL,
     symbol TEXT NOT NULL,
     last_ts TEXT NOT NULL,
-    last_price REAL,
-    base_volume_24h REAL,
-    quote_turnover_24h REAL,
-    change_pct_24h REAL,
+    last_price DOUBLE PRECISION,
+    base_volume_24h DOUBLE PRECISION,
+    quote_turnover_24h DOUBLE PRECISION,
+    change_pct_24h DOUBLE PRECISION,
     PRIMARY KEY (date, venue, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_daily_venue_symbol ON daily_turnover(venue, symbol);
@@ -57,9 +56,8 @@ CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_turnover(date);
 """
 
 
-def get_conn() -> sqlite3.Connection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+def get_conn():
+    conn = db.connect()
     conn.executescript(SCHEMA)
     return conn
 
@@ -68,7 +66,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def insert_tickers(conn: sqlite3.Connection, tickers: list[dict], ts: str | None = None) -> int:
+def insert_tickers(conn, tickers: list[dict], ts: str | None = None) -> int:
     ts = ts or now_iso()
     rows = [
         (
@@ -81,23 +79,33 @@ def insert_tickers(conn: sqlite3.Connection, tickers: list[dict], ts: str | None
         for t in tickers if t.get("symbol")
     ]
     conn.executemany(
-        "INSERT OR REPLACE INTO ticker_snapshots VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        """
+        INSERT INTO ticker_snapshots
+            (ts, venue, symbol, last, bid, ask, high_24h, low_24h,
+             base_volume_24h, quote_turnover_24h, change_pct_24h)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT (ts, venue, symbol) DO UPDATE SET
+            last=excluded.last, bid=excluded.bid, ask=excluded.ask,
+            high_24h=excluded.high_24h, low_24h=excluded.low_24h,
+            base_volume_24h=excluded.base_volume_24h,
+            quote_turnover_24h=excluded.quote_turnover_24h,
+            change_pct_24h=excluded.change_pct_24h
+        """,
         rows,
     )
     conn.commit()
     return len(rows)
 
 
-def insert_depth(
-    conn: sqlite3.Connection,
-    venue: str,
-    symbol: str,
-    depth: dict,
-    ts: str | None = None,
-) -> None:
+def insert_depth(conn, venue: str, symbol: str, depth: dict, ts: str | None = None) -> None:
     ts = ts or now_iso()
     conn.execute(
-        "INSERT OR REPLACE INTO depth_snapshots VALUES (?,?,?,?,?)",
+        """
+        INSERT INTO depth_snapshots (ts, venue, symbol, bids_json, asks_json)
+        VALUES (?,?,?,?,?)
+        ON CONFLICT (ts, venue, symbol) DO UPDATE SET
+            bids_json=excluded.bids_json, asks_json=excluded.asks_json
+        """,
         (
             ts, venue, symbol,
             json.dumps(depth.get("bids", [])),
@@ -107,10 +115,12 @@ def insert_depth(
     conn.commit()
 
 
-def latest_tickers(conn: sqlite3.Connection, venue: str | None = None) -> list[dict]:
+def latest_tickers(conn, venue: str | None = None) -> list[dict]:
     """Most-recent ticker per (venue, symbol)."""
     sql = """
-    SELECT t.* FROM ticker_snapshots t
+    SELECT t.ts, t.venue, t.symbol, t.last, t.bid, t.ask, t.high_24h, t.low_24h,
+           t.base_volume_24h, t.quote_turnover_24h, t.change_pct_24h
+    FROM ticker_snapshots t
     JOIN (
         SELECT venue, symbol, MAX(ts) AS max_ts
         FROM ticker_snapshots
@@ -126,15 +136,23 @@ def latest_tickers(conn: sqlite3.Connection, venue: str | None = None) -> list[d
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def latest_depth(conn, venue: str, symbol: str) -> dict | None:
+    cur = conn.execute(
+        "SELECT ts, bids_json, asks_json FROM depth_snapshots "
+        "WHERE venue = ? AND symbol = ? ORDER BY ts DESC LIMIT 1",
+        (venue, symbol),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {"ts": row[0], "bids": json.loads(row[1]), "asks": json.loads(row[2])}
+
+
 def _utc_date(ts_iso: str) -> str:
     return ts_iso[:10]
 
 
-def upsert_daily_turnover(
-    conn: sqlite3.Connection,
-    tickers: list[dict],
-    ts: str | None = None,
-) -> int:
+def upsert_daily_turnover(conn, tickers: list[dict], ts: str | None = None) -> int:
     """Roll the latest 24h-rolling figures into one row per (date, venue, symbol).
 
     Called every poll cycle — each call overwrites today's row, so the last
@@ -153,7 +171,18 @@ def upsert_daily_turnover(
         for t in tickers if t.get("symbol")
     ]
     conn.executemany(
-        "INSERT OR REPLACE INTO daily_turnover VALUES (?,?,?,?,?,?,?,?)",
+        """
+        INSERT INTO daily_turnover
+            (date, venue, symbol, last_ts, last_price,
+             base_volume_24h, quote_turnover_24h, change_pct_24h)
+        VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT (date, venue, symbol) DO UPDATE SET
+            last_ts=excluded.last_ts,
+            last_price=excluded.last_price,
+            base_volume_24h=excluded.base_volume_24h,
+            quote_turnover_24h=excluded.quote_turnover_24h,
+            change_pct_24h=excluded.change_pct_24h
+        """,
         rows,
     )
     conn.commit()
@@ -161,16 +190,12 @@ def upsert_daily_turnover(
 
 
 def daily_turnover_history(
-    conn: sqlite3.Connection,
+    conn,
     venue: str | None = None,
     symbol: str | None = None,
     days: int = 30,
 ) -> list[dict]:
-    """Return historical daily rows from the last `days` days, newest first.
-
-    Optionally filter by venue/symbol.
-    """
-    from datetime import timedelta
+    """Return historical daily rows from the last `days` days, newest first."""
     cutoff = (datetime.now(timezone.utc).date() - timedelta(days=int(days) - 1)).isoformat()
     where = ["date >= ?"]
     args: list = [cutoff]
@@ -190,15 +215,3 @@ def daily_turnover_history(
     cur = conn.execute(sql, tuple(args))
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
-
-
-def latest_depth(conn: sqlite3.Connection, venue: str, symbol: str) -> dict | None:
-    cur = conn.execute(
-        "SELECT ts, bids_json, asks_json FROM depth_snapshots "
-        "WHERE venue = ? AND symbol = ? ORDER BY ts DESC LIMIT 1",
-        (venue, symbol),
-    )
-    row = cur.fetchone()
-    if not row:
-        return None
-    return {"ts": row[0], "bids": json.loads(row[1]), "asks": json.loads(row[2])}
