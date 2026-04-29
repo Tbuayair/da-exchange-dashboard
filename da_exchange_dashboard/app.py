@@ -98,6 +98,7 @@ def create_blueprint(name: str = "da") -> Blueprint:
             "upbit_th": f"THB-{base}",
             "bitazza": f"{base}_THB",
             "orbix_cg": f"{base}_THB",
+            "innovestx": f"{base}THB",
         }
         conn = store.get_conn()
         try:
