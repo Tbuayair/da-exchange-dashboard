@@ -321,6 +321,60 @@ def synthesize_invx_24h(conn, symbol: str) -> dict:
     }
 
 
+def turnover_share_by_venue(conn, date_str: str | None = None) -> dict:
+    """Total quote turnover per venue on a given UTC date.
+
+    Aggregates rows in `daily_turnover` for the requested date, summing
+    `quote_turnover_24h` across all symbols within each venue. Returns a
+    dict ready for chart consumption (pie/donut).
+
+    Args:
+        date_str: 'YYYY-MM-DD' (UTC). Defaults to today (UTC).
+
+    Returns:
+        {
+            'date': '2026-05-05',
+            'total': 1234567890.0,
+            'venues': [
+                {'venue': 'bitkub', 'total': 800_000_000.0, 'share_pct': 64.8},
+                ...sorted desc by total
+            ]
+        }
+    """
+    if not date_str:
+        date_str = datetime.now(timezone.utc).date().isoformat()
+    cur = conn.execute(
+        """
+        SELECT venue, SUM(quote_turnover_24h) AS total
+        FROM daily_turnover
+        WHERE date = ? AND quote_turnover_24h IS NOT NULL
+        GROUP BY venue
+        ORDER BY total DESC
+        """,
+        (date_str,),
+    )
+    rows = cur.fetchall()
+    venues = [{"venue": r[0], "total": float(r[1] or 0)} for r in rows]
+    total = sum(v["total"] for v in venues)
+    for v in venues:
+        v["share_pct"] = round((v["total"] / total * 100), 2) if total else 0.0
+    return {"date": date_str, "total": total, "venues": venues}
+
+
+def turnover_share_dates(conn, days: int = 30) -> list[str]:
+    """List UTC dates (newest first) that have turnover data, capped at `days`."""
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=int(days) - 1)).isoformat()
+    cur = conn.execute(
+        """
+        SELECT DISTINCT date FROM daily_turnover
+        WHERE date >= ? AND quote_turnover_24h IS NOT NULL
+        ORDER BY date DESC
+        """,
+        (cutoff,),
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
 def daily_turnover_history(
     conn,
     venue: str | None = None,

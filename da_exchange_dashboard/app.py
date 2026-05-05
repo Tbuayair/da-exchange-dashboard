@@ -170,6 +170,24 @@ def create_blueprint(name: str = "da") -> Blueprint:
             "bars": bars,
         })
 
+    @bp.route("/api/turnover_share")
+    def api_turnover_share():
+        """Total quote turnover per venue on a given UTC date.
+
+        Query params:
+            date: 'YYYY-MM-DD' (UTC). Defaults to today.
+            with_dates: '1' to also return list of available dates (last 30d).
+        """
+        date_str = request.args.get("date") or None
+        conn = store.get_conn()
+        try:
+            data = store.turnover_share_by_venue(conn, date_str=date_str)
+            if request.args.get("with_dates") == "1":
+                data["available_dates"] = store.turnover_share_dates(conn, days=30)
+        finally:
+            conn.close()
+        return jsonify(data)
+
     @bp.route("/api/daily_turnover")
     def api_daily_turnover():
         venue = request.args.get("venue") or None

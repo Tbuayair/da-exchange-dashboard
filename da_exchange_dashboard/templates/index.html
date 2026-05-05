@@ -38,6 +38,19 @@
     </nav>
 
     <section id="insights" class="insights">
+      <div class="card card-turnover-share">
+        <h3>
+          Daily Turnover Share <span class="hint">by venue · UTC</span>
+          <input type="date" id="ts-date" class="ts-date-input" />
+        </h3>
+        <div class="ts-chart-row">
+          <div class="ts-svg-wrap">
+            <svg id="ts-pie" viewBox="-110 -110 220 220" role="img" aria-label="Turnover share pie chart"></svg>
+            <div class="ts-total" id="ts-total"></div>
+          </div>
+          <table class="mini ts-legend"><thead><tr><th></th><th>Venue</th><th>Share</th><th>Total (THB)</th></tr></thead><tbody id="ts-legend"></tbody></table>
+        </div>
+      </div>
       <div class="card">
         <h3>Cross-Venue Spreads <span class="hint">top 8 by bps</span></h3>
         <table class="mini"><thead><tr><th>Base</th><th>Venues</th><th>Spread (bps)</th><th>Cheap → Rich</th><th>Total 24h</th></tr></thead><tbody id="ins-spread"></tbody></table>
@@ -450,6 +463,132 @@
       panel.appendChild(tkTbl);
     }
 
+    // ---------- daily turnover share (pie chart) ----------
+    // Distinct hues per venue. InvX deep purple matches the dashboard brand.
+    const VENUE_COLORS = {
+      bitkub:     "#f9a825",
+      binance_th: "#fcd535",
+      upbit_th:   "#1c8be7",
+      bitazza:    "#22d3ee",
+      orbix_cg:   "#7c4dff",
+      innovestx:  "#400080",
+    };
+    const VENUE_LABELS = {
+      bitkub: "Bitkub",
+      binance_th: "Binance TH",
+      upbit_th: "Upbit TH",
+      bitazza: "Bitazza",
+      orbix_cg: "Orbix",
+      innovestx: "InnovestX",
+    };
+    const SVG_NS = "http://www.w3.org/2000/svg";
+
+    function colorFor(venue) { return VENUE_COLORS[venue] || "#6b7280"; }
+
+    function clearChildren(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+
+    function arcPath(cx, cy, r, startAngle, endAngle) {
+      // Full-circle case — SVG arc can't draw 360° in one segment.
+      if (Math.abs(endAngle - startAngle - Math.PI * 2) < 1e-6) {
+        const mid = startAngle + Math.PI;
+        return `M${cx + r},${cy} A${r},${r} 0 1 1 ${cx + r * Math.cos(mid)},${cy + r * Math.sin(mid)} A${r},${r} 0 1 1 ${cx + r},${cy} Z`;
+      }
+      const x1 = cx + r * Math.cos(startAngle);
+      const y1 = cy + r * Math.sin(startAngle);
+      const x2 = cx + r * Math.cos(endAngle);
+      const y2 = cy + r * Math.sin(endAngle);
+      const large = (endAngle - startAngle) > Math.PI ? 1 : 0;
+      return `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large} 1 ${x2},${y2} Z`;
+    }
+
+    function renderTurnoverShare(data) {
+      const svg = document.getElementById("ts-pie");
+      const legend = document.getElementById("ts-legend");
+      const totalEl = document.getElementById("ts-total");
+      clearChildren(svg);
+      clearChildren(legend);
+
+      const venues = data.venues || [];
+      const total = data.total || 0;
+      totalEl.textContent = total > 0
+        ? `Total: ${fmtBig(total)} THB`
+        : `No turnover data for ${data.date}`;
+
+      if (!total || !venues.length) {
+        const placeholder = document.createElementNS(SVG_NS, "circle");
+        placeholder.setAttribute("r", "90");
+        placeholder.setAttribute("cx", "0");
+        placeholder.setAttribute("cy", "0");
+        placeholder.setAttribute("fill", "none");
+        placeholder.setAttribute("stroke", "var(--border)");
+        placeholder.setAttribute("stroke-width", "2");
+        placeholder.setAttribute("stroke-dasharray", "4 4");
+        svg.appendChild(placeholder);
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 4;
+        td.style.textAlign = "center";
+        td.style.color = "var(--muted)";
+        td.style.padding = "12px";
+        td.textContent = "No data";
+        tr.appendChild(td);
+        legend.appendChild(tr);
+        return;
+      }
+
+      // Pie slices, starting at 12 o'clock.
+      let angle = -Math.PI / 2;
+      const r = 90;
+      for (const v of venues) {
+        const slice = (v.share_pct / 100) * Math.PI * 2;
+        const path = document.createElementNS(SVG_NS, "path");
+        path.setAttribute("d", arcPath(0, 0, r, angle, angle + slice));
+        path.setAttribute("fill", colorFor(v.venue));
+        path.setAttribute("stroke", "var(--bg)");
+        path.setAttribute("stroke-width", "1");
+        path.setAttribute("data-venue", v.venue);
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent = `${VENUE_LABELS[v.venue] || v.venue}: ${v.share_pct.toFixed(2)}% — ${fmtBig(v.total)} THB`;
+        path.appendChild(title);
+        svg.appendChild(path);
+        angle += slice;
+      }
+
+      // Legend table
+      for (const v of venues) {
+        const tr = document.createElement("tr");
+        const swatchTd = document.createElement("td");
+        const swatch = document.createElement("span");
+        swatch.style.display = "inline-block";
+        swatch.style.width = "10px";
+        swatch.style.height = "10px";
+        swatch.style.borderRadius = "2px";
+        swatch.style.background = colorFor(v.venue);
+        swatch.style.verticalAlign = "middle";
+        swatchTd.appendChild(swatch);
+        tr.appendChild(swatchTd);
+        tr.appendChild(makeCell(VENUE_LABELS[v.venue] || v.venue));
+        tr.appendChild(makeCell(`${v.share_pct.toFixed(2)}%`, "num"));
+        tr.appendChild(makeCell(fmtBig(v.total), "num"));
+        legend.appendChild(tr);
+      }
+    }
+
+    async function loadTurnoverShare() {
+      const dateInput = document.getElementById("ts-date");
+      const date = dateInput.value || "";
+      const url = api("/api/turnover_share" + (date ? `?date=${date}` : ""));
+      try {
+        const data = await fetch(url).then(r => r.json());
+        if (!dateInput.value && data.date) dateInput.value = data.date;
+        renderTurnoverShare(data);
+      } catch (e) {
+        console.error("turnover_share fetch failed", e);
+      }
+    }
+
+    document.getElementById("ts-date").addEventListener("change", loadTurnoverShare);
+
     // ---------- refresh + wiring ----------
     async function refresh() {
       try {
@@ -503,7 +642,9 @@
     });
 
     refresh();
+    loadTurnoverShare();
     setInterval(refresh, 60000);
+    setInterval(loadTurnoverShare, 5 * 60 * 1000);  // pie refreshes every 5 min
   </script>
 </body>
 </html>
