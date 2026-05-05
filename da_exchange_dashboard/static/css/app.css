@@ -203,6 +203,46 @@ main { padding: 18px 20px 60px; max-width: 1600px; margin: 0 auto; }
 }
 .card h3 .hint { font-size: 10px; font-weight: 400; text-transform: none; opacity: 0.7; letter-spacing: 0; }
 
+/* Turnover Share pie card — span 2 columns when grid has room */
+.card-turnover-share {
+  grid-column: span 2;
+}
+@media (max-width: 900px) {
+  .card-turnover-share { grid-column: span 1; }
+}
+.ts-date-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+.ts-date-input::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+.ts-chart-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 16px;
+  align-items: center;
+}
+@media (max-width: 600px) {
+  .ts-chart-row { grid-template-columns: 1fr; }
+}
+.ts-svg-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+#ts-pie { width: 200px; height: 200px; display: block; }
+.ts-total {
+  font-size: 12px;
+  color: var(--text-soft);
+  font-weight: 600;
+  text-align: center;
+}
+.ts-legend th, .ts-legend td { padding: 4px 6px; }
+.ts-legend th:first-child, .ts-legend td:first-child { width: 18px; padding-right: 0; }
+
 /* ============ Tables ============ */
 .section-h {
   font-size: 11px;
