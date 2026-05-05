@@ -119,6 +119,10 @@ def poll_coingecko_venue(conn, venue_label: str, exchange_id: str) -> int:
 
 
 def run_once() -> None:
+    # psycopg2 puts the connection into 'aborted' state on any DB error and
+    # refuses subsequent statements until ROLLBACK. Without conn.rollback()
+    # in each except branch below, one venue's failure poisoned the entire
+    # cycle (observed 2026-05-02 to 05 when Neon hit the 512MB cap).
     conn = store.get_conn()
     try:
         for name, fn in [
@@ -131,17 +135,20 @@ def run_once() -> None:
                 fn(conn)
             except Exception as e:
                 log.error("%s poll failed: %s", name, e)
+                conn.rollback()
         for venue_label, exchange_id in coingecko.EXCHANGE_IDS.items():
             try:
                 poll_coingecko_venue(conn, venue_label, exchange_id)
             except Exception as e:
                 log.error("%s (cg) poll failed: %s", venue_label, e)
+                conn.rollback()
         try:
             latest = store.latest_tickers(conn)
             written = store.upsert_daily_turnover(conn, latest)
             log.info("daily_turnover: rolled up %d rows", written)
         except Exception as e:
             log.error("daily_turnover rollup failed: %s", e)
+            _safe_rollback(conn)
     finally:
         conn.close()
 

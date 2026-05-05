@@ -71,6 +71,13 @@ class _ConnWrapper:
     def commit(self):
         self._conn.commit()
 
+    def rollback(self):
+        """Roll back any aborted transaction. Safe to call when none is open."""
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
     def close(self):
         self._conn.close()
 
