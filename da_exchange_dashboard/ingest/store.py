@@ -61,6 +61,23 @@ CREATE TABLE IF NOT EXISTS daily_turnover (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_venue_symbol ON daily_turnover(venue, symbol);
 CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_turnover(date);
+
+-- 1-minute OHLCV bars for InnovestX. Used to synthesize 24h figures locally
+-- because InvX's REST API doesn't expose 24h-rolling stats directly. Pruned
+-- to ~25 hours of history each cycle (~52K rows steady state, <5 MB).
+CREATE TABLE IF NOT EXISTS invx_bars_1m (
+    ts_minute TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    open DOUBLE PRECISION,
+    high DOUBLE PRECISION,
+    low DOUBLE PRECISION,
+    close DOUBLE PRECISION,
+    volume DOUBLE PRECISION,
+    bid DOUBLE PRECISION,
+    ask DOUBLE PRECISION,
+    PRIMARY KEY (ts_minute, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_invx_bars_symbol_ts ON invx_bars_1m(symbol, ts_minute);
 """
 
 
@@ -203,6 +220,105 @@ def upsert_daily_turnover(conn, tickers: list[dict], ts: str | None = None) -> i
     )
     conn.commit()
     return len(rows)
+
+
+def insert_invx_bar(conn, symbol: str, bar: dict) -> bool:
+    """Append a 1-minute bar from InvX /ticker/subscribe to invx_bars_1m.
+
+    Idempotent on (ts_minute, symbol). The InvX API returns the same bar's
+    dateTime each time within a minute, so reposting is harmless. Returns
+    True if a row was written/updated.
+    """
+    ts_minute = bar.get("dateTime")
+    if not ts_minute:
+        return False
+
+    def _f(v):
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    conn.execute(
+        """
+        INSERT INTO invx_bars_1m
+            (ts_minute, symbol, open, high, low, close, volume, bid, ask)
+        VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT (ts_minute, symbol) DO UPDATE SET
+            open=excluded.open, high=excluded.high, low=excluded.low,
+            close=excluded.close, volume=excluded.volume,
+            bid=excluded.bid, ask=excluded.ask
+        """,
+        (
+            ts_minute, symbol,
+            _f(bar.get("open")), _f(bar.get("high")),
+            _f(bar.get("low")), _f(bar.get("close")),
+            _f(bar.get("volume")),
+            _f(bar.get("insideBidPrice")), _f(bar.get("insideAskPrice")),
+        ),
+    )
+    conn.commit()
+    return True
+
+
+def prune_invx_bars(conn, hours: int = 25) -> int:
+    """Delete InvX 1m bars older than `hours`. Keeps ~25h by default to make
+    24h synthesis robust against minor clock skew.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+    cur = conn.execute(
+        "DELETE FROM invx_bars_1m WHERE ts_minute < ?",
+        (cutoff,),
+    )
+    conn.commit()
+    # rowcount may be -1 on some drivers; treat that as unknown.
+    n = getattr(cur, "rowcount", -1)
+    return n if n is not None and n >= 0 else 0
+
+
+def synthesize_invx_24h(conn, symbol: str) -> dict:
+    """Compute 24h-rolling figures for one InvX symbol from the last 1440 bars.
+
+    Returns a dict with keys: base_volume_24h, quote_turnover_24h, high_24h,
+    low_24h, change_pct_24h. Any field that can't be computed (e.g. <2 bars)
+    is None. Quote turnover is approximated as SUM(volume × close) — exact
+    VWAP would need trade-level data we don't have.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
+    cur = conn.execute(
+        """
+        SELECT close, volume, high, low
+        FROM invx_bars_1m
+        WHERE symbol = ? AND ts_minute >= ?
+        ORDER BY ts_minute ASC
+        """,
+        (symbol, cutoff),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        return {
+            "base_volume_24h": None, "quote_turnover_24h": None,
+            "high_24h": None, "low_24h": None, "change_pct_24h": None,
+        }
+    closes = [r[0] for r in rows if r[0] is not None]
+    vols = [r[1] for r in rows if r[1] is not None]
+    highs = [r[2] for r in rows if r[2] is not None]
+    lows = [r[3] for r in rows if r[3] is not None]
+    base_vol = sum(vols) if vols else None
+    quote_turn = sum((r[0] or 0) * (r[1] or 0) for r in rows) if rows else None
+    high = max(highs) if highs else None
+    low = min(lows) if lows else None
+    if len(closes) >= 2 and closes[0]:
+        change_pct = (closes[-1] - closes[0]) / closes[0] * 100
+    else:
+        change_pct = None
+    return {
+        "base_volume_24h": base_vol,
+        "quote_turnover_24h": quote_turn,
+        "high_24h": high,
+        "low_24h": low,
+        "change_pct_24h": change_pct,
+    }
 
 
 def daily_turnover_history(

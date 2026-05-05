@@ -81,7 +81,11 @@ def poll_upbit_th(conn) -> int:
 
 
 def poll_innovestx(conn) -> int:
-    """Poll InnovestX (authenticated). Skips silently when API creds are missing."""
+    """Poll InnovestX (authenticated). Accumulates 1m bars and synthesizes
+    24h figures locally because InvX REST exposes no native 24h endpoint.
+
+    Skips silently when API creds are missing.
+    """
     try:
         symbols_payload = innovestx.fetch_symbols()
     except innovestx.InnovestXAuthError:
@@ -91,16 +95,47 @@ def poll_innovestx(conn) -> int:
     if not thb:
         log.warning("innovestx: no THB symbols discovered")
         return 0
+
+    # Pass 1: fetch each symbol's latest 1m bar, store the bar, build the
+    # base ticker dict (with 24h fields still None).
     tickers: list[dict] = []
+    raw_by_sym: dict[str, dict] = {}
     for sym in thb:
         try:
             raw = innovestx.fetch_ticker(sym)
             if raw:
+                raw_by_sym[sym] = raw
+                store.insert_invx_bar(conn, sym, raw)
                 tickers.append(innovestx.normalize_ticker(raw))
         except Exception as e:
             log.warning("innovestx ticker %s failed: %s", sym, e)
+
+    # Pass 2: prune old bars + synthesize 24h figures from the rolling window.
+    try:
+        store.prune_invx_bars(conn, hours=25)
+    except Exception as e:
+        log.warning("innovestx prune failed: %s", e)
+        conn.rollback()
+
+    synthesized = 0
+    for t in tickers:
+        try:
+            agg = store.synthesize_invx_24h(conn, t["symbol"])
+            t["base_volume_24h"] = agg["base_volume_24h"]
+            t["quote_turnover_24h"] = agg["quote_turnover_24h"]
+            t["high_24h"] = agg["high_24h"]
+            t["low_24h"] = agg["low_24h"]
+            t["change_pct_24h"] = agg["change_pct_24h"]
+            if agg["quote_turnover_24h"] is not None:
+                synthesized += 1
+        except Exception as e:
+            log.warning("innovestx synthesis %s failed: %s", t["symbol"], e)
+            conn.rollback()
+
     n = store.insert_tickers(conn, tickers)
-    log.info("innovestx: %d THB tickers stored", n)
+    log.info("innovestx: %d THB tickers stored (%d with synth 24h)", n, synthesized)
+
+    # L2 depth for top-N by synthesized turnover (or first N if no turnover yet)
     for t in _top_by_turnover(tickers, DEPTH_TOP_N) or tickers[:DEPTH_TOP_N]:
         try:
             depth = innovestx.fetch_depth(t["symbol"])
