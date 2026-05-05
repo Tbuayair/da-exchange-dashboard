@@ -130,14 +130,7 @@ def create_blueprint(name: str = "da") -> Blueprint:
         conn = store.get_conn()
         try:
             rows = store.latest_tickers(conn)
-            depth_rows = conn.execute("""
-                SELECT d.venue, d.symbol, d.bids_json, d.asks_json
-                FROM depth_snapshots d
-                JOIN (
-                    SELECT venue, symbol, MAX(ts) AS max_ts FROM depth_snapshots
-                    GROUP BY venue, symbol
-                ) m ON m.venue = d.venue AND m.symbol = d.symbol AND m.max_ts = d.ts
-            """).fetchall()
+            depth_rows = store.latest_all_depth(conn)
         finally:
             conn.close()
 

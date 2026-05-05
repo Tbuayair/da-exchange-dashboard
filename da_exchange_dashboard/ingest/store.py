@@ -1,8 +1,17 @@
-"""Backend-agnostic snapshot store for ticker (L1+turnover) and depth (L2) data.
+"""Backend-agnostic snapshot store — LATEST-ONLY tickers + depth + daily rollup.
 
-Uses db.py to pick PostgreSQL (production) or SQLite (dev) based on
-DATABASE_URL. Schema uses ON CONFLICT (works in SQLite 3.24+ and Postgres 9.5+)
-so the same SQL runs on both backends.
+Storage strategy (v2, post 2026-05-05 redesign):
+
+- `latest_ticker` keeps exactly ONE row per (venue, symbol) — the most recent
+  reading. Each poll cycle UPSERTs and replaces, so the table is small forever
+  (~520 rows total ≈ <1 MB). Per-snapshot history is intentionally not kept;
+  the dashboard only ever queries the latest reading anyway.
+- `latest_depth` similarly keeps one L2 snapshot per (venue, symbol).
+- `daily_turnover` is the ONLY table that grows over time (one row per
+  (date, venue, symbol)) — this is the durable history we care about.
+
+Backend-portable SQL: uses `INSERT ... ON CONFLICT DO UPDATE` (works on both
+SQLite 3.24+ and Postgres 9.5+).
 """
 import json
 from datetime import datetime, timedelta, timezone
@@ -10,11 +19,14 @@ from datetime import datetime, timedelta, timezone
 from . import db
 
 
+# v2 schema. Old `ticker_snapshots` and `depth_snapshots` (with ts in PK) are
+# orphaned — drop them manually after this lands. The DROP is intentionally NOT
+# in this script so accidental re-imports don't destroy local dev DBs.
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS ticker_snapshots (
-    ts TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS latest_ticker (
     venue TEXT NOT NULL,
     symbol TEXT NOT NULL,
+    ts TEXT NOT NULL,
     last DOUBLE PRECISION,
     bid DOUBLE PRECISION,
     ask DOUBLE PRECISION,
@@ -23,23 +35,19 @@ CREATE TABLE IF NOT EXISTS ticker_snapshots (
     base_volume_24h DOUBLE PRECISION,
     quote_turnover_24h DOUBLE PRECISION,
     change_pct_24h DOUBLE PRECISION,
-    PRIMARY KEY (ts, venue, symbol)
+    PRIMARY KEY (venue, symbol)
 );
-CREATE INDEX IF NOT EXISTS idx_ticker_venue_symbol ON ticker_snapshots(venue, symbol);
-CREATE INDEX IF NOT EXISTS idx_ticker_ts ON ticker_snapshots(ts);
 
-CREATE TABLE IF NOT EXISTS depth_snapshots (
-    ts TEXT NOT NULL,
+CREATE TABLE IF NOT EXISTS latest_depth (
     venue TEXT NOT NULL,
     symbol TEXT NOT NULL,
+    ts TEXT NOT NULL,
     bids_json TEXT NOT NULL,
     asks_json TEXT NOT NULL,
-    PRIMARY KEY (ts, venue, symbol)
+    PRIMARY KEY (venue, symbol)
 );
-CREATE INDEX IF NOT EXISTS idx_depth_venue_symbol ON depth_snapshots(venue, symbol);
 
--- One row per (date, venue, symbol). Persists across redeploys when the
--- underlying database is durable (Postgres on Neon).
+-- One row per (date, venue, symbol). Persists across redeploys (Postgres on Neon).
 CREATE TABLE IF NOT EXISTS daily_turnover (
     date TEXT NOT NULL,
     venue TEXT NOT NULL,
@@ -67,10 +75,11 @@ def now_iso() -> str:
 
 
 def insert_tickers(conn, tickers: list[dict], ts: str | None = None) -> int:
+    """UPSERT — replaces the latest row per (venue, symbol). No history kept."""
     ts = ts or now_iso()
     rows = [
         (
-            ts, t["venue"], t["symbol"],
+            t["venue"], t["symbol"], ts,
             t.get("last"), t.get("bid"), t.get("ask"),
             t.get("high_24h"), t.get("low_24h"),
             t.get("base_volume_24h"), t.get("quote_turnover_24h"),
@@ -80,11 +89,12 @@ def insert_tickers(conn, tickers: list[dict], ts: str | None = None) -> int:
     ]
     conn.executemany(
         """
-        INSERT INTO ticker_snapshots
-            (ts, venue, symbol, last, bid, ask, high_24h, low_24h,
+        INSERT INTO latest_ticker
+            (venue, symbol, ts, last, bid, ask, high_24h, low_24h,
              base_volume_24h, quote_turnover_24h, change_pct_24h)
         VALUES (?,?,?,?,?,?,?,?,?,?,?)
-        ON CONFLICT (ts, venue, symbol) DO UPDATE SET
+        ON CONFLICT (venue, symbol) DO UPDATE SET
+            ts=excluded.ts,
             last=excluded.last, bid=excluded.bid, ask=excluded.ask,
             high_24h=excluded.high_24h, low_24h=excluded.low_24h,
             base_volume_24h=excluded.base_volume_24h,
@@ -98,16 +108,19 @@ def insert_tickers(conn, tickers: list[dict], ts: str | None = None) -> int:
 
 
 def insert_depth(conn, venue: str, symbol: str, depth: dict, ts: str | None = None) -> None:
+    """UPSERT — replaces the latest L2 snapshot per (venue, symbol)."""
     ts = ts or now_iso()
     conn.execute(
         """
-        INSERT INTO depth_snapshots (ts, venue, symbol, bids_json, asks_json)
+        INSERT INTO latest_depth (venue, symbol, ts, bids_json, asks_json)
         VALUES (?,?,?,?,?)
-        ON CONFLICT (ts, venue, symbol) DO UPDATE SET
-            bids_json=excluded.bids_json, asks_json=excluded.asks_json
+        ON CONFLICT (venue, symbol) DO UPDATE SET
+            ts=excluded.ts,
+            bids_json=excluded.bids_json,
+            asks_json=excluded.asks_json
         """,
         (
-            ts, venue, symbol,
+            venue, symbol, ts,
             json.dumps(depth.get("bids", [])),
             json.dumps(depth.get("asks", [])),
         ),
@@ -116,30 +129,33 @@ def insert_depth(conn, venue: str, symbol: str, depth: dict, ts: str | None = No
 
 
 def latest_tickers(conn, venue: str | None = None) -> list[dict]:
-    """Most-recent ticker per (venue, symbol)."""
+    """All current tickers — one row per (venue, symbol). Trivial SELECT now."""
     sql = """
-    SELECT t.ts, t.venue, t.symbol, t.last, t.bid, t.ask, t.high_24h, t.low_24h,
-           t.base_volume_24h, t.quote_turnover_24h, t.change_pct_24h
-    FROM ticker_snapshots t
-    JOIN (
-        SELECT venue, symbol, MAX(ts) AS max_ts
-        FROM ticker_snapshots
-        GROUP BY venue, symbol
-    ) m ON m.venue = t.venue AND m.symbol = t.symbol AND m.max_ts = t.ts
+    SELECT ts, venue, symbol, last, bid, ask, high_24h, low_24h,
+           base_volume_24h, quote_turnover_24h, change_pct_24h
+    FROM latest_ticker
     """
     args: tuple = ()
     if venue:
-        sql += " WHERE t.venue = ?"
+        sql += " WHERE venue = ?"
         args = (venue,)
     cur = conn.execute(sql, args)
     cols = [d[0] for d in cur.description]
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def latest_all_depth(conn) -> list[tuple]:
+    """Returns (venue, symbol, bids_json, asks_json) for every (venue, symbol)."""
+    cur = conn.execute(
+        "SELECT venue, symbol, bids_json, asks_json FROM latest_depth"
+    )
+    return cur.fetchall()
+
+
 def latest_depth(conn, venue: str, symbol: str) -> dict | None:
     cur = conn.execute(
-        "SELECT ts, bids_json, asks_json FROM depth_snapshots "
-        "WHERE venue = ? AND symbol = ? ORDER BY ts DESC LIMIT 1",
+        "SELECT ts, bids_json, asks_json FROM latest_depth "
+        "WHERE venue = ? AND symbol = ?",
         (venue, symbol),
     )
     row = cur.fetchone()
