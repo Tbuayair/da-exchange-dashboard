@@ -190,6 +190,10 @@ def upsert_daily_turnover(conn, tickers: list[dict], ts: str | None = None) -> i
 
     Called every poll cycle — each call overwrites today's row, so the last
     write before UTC midnight becomes the de-facto end-of-day record.
+
+    Single-row helper using a list of ticker dicts. Prefer
+    upsert_daily_turnover_from_latest() for hot paths — it does the rollup
+    entirely server-side with zero egress.
     """
     ts = ts or now_iso()
     date = _utc_date(ts)
@@ -222,23 +226,57 @@ def upsert_daily_turnover(conn, tickers: list[dict], ts: str | None = None) -> i
     return len(rows)
 
 
-def insert_invx_bar(conn, symbol: str, bar: dict) -> bool:
-    """Append a 1-minute bar from InvX /ticker/subscribe to invx_bars_1m.
+def upsert_daily_turnover_from_latest(conn) -> int:
+    """Roll latest_ticker → daily_turnover ENTIRELY server-side.
 
-    Idempotent on (ts_minute, symbol). The InvX API returns the same bar's
-    dateTime each time within a minute, so reposting is harmless. Returns
-    True if a row was written/updated.
+    Replaces the prior pattern of (a) SELECT * FROM latest_ticker [egress
+    ~65 KB/cycle], (b) build dict list in app, (c) executemany INSERT.
+    The new SQL pulls 0 bytes across the wire — Postgres reads its own
+    rows and writes the result row in the same query plan.
+
+    Returns the number of rows affected if the driver reports it, else -1.
+    """
+    today = datetime.now(timezone.utc).date().isoformat()
+    ts = now_iso()
+    cur = conn.execute(
+        """
+        INSERT INTO daily_turnover
+            (date, venue, symbol, last_ts, last_price,
+             base_volume_24h, quote_turnover_24h, change_pct_24h)
+        SELECT ?, venue, symbol, ?, last,
+               base_volume_24h, quote_turnover_24h, change_pct_24h
+        FROM latest_ticker
+        WHERE 1=1
+        ON CONFLICT (date, venue, symbol) DO UPDATE SET
+            last_ts=excluded.last_ts,
+            last_price=excluded.last_price,
+            base_volume_24h=excluded.base_volume_24h,
+            quote_turnover_24h=excluded.quote_turnover_24h,
+            change_pct_24h=excluded.change_pct_24h
+        """,
+        (today, ts),
+    )
+    conn.commit()
+    n = getattr(cur, "rowcount", -1)
+    return n if n is not None else -1
+
+
+def _f(v):
+    try:
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def insert_invx_bar(conn, symbol: str, bar: dict) -> bool:
+    """Append a single 1-minute bar to invx_bars_1m. Single-row helper.
+
+    Prefer insert_invx_bars_batch() for hot paths — it batches into one
+    transaction per cycle instead of one transaction per symbol.
     """
     ts_minute = bar.get("dateTime")
     if not ts_minute:
         return False
-
-    def _f(v):
-        try:
-            return float(v) if v is not None else None
-        except (TypeError, ValueError):
-            return None
-
     conn.execute(
         """
         INSERT INTO invx_bars_1m
@@ -261,6 +299,42 @@ def insert_invx_bar(conn, symbol: str, bar: dict) -> bool:
     return True
 
 
+def insert_invx_bars_batch(conn, bars_by_symbol: dict[str, dict]) -> int:
+    """Batch-insert multiple 1m bars in a single transaction.
+
+    bars_by_symbol: {symbol: bar_dict_from_invx_api}. Returns count of rows
+    actually written (skips entries missing dateTime).
+    """
+    rows = []
+    for symbol, bar in bars_by_symbol.items():
+        ts_minute = bar.get("dateTime") if bar else None
+        if not ts_minute:
+            continue
+        rows.append((
+            ts_minute, symbol,
+            _f(bar.get("open")), _f(bar.get("high")),
+            _f(bar.get("low")), _f(bar.get("close")),
+            _f(bar.get("volume")),
+            _f(bar.get("insideBidPrice")), _f(bar.get("insideAskPrice")),
+        ))
+    if not rows:
+        return 0
+    conn.executemany(
+        """
+        INSERT INTO invx_bars_1m
+            (ts_minute, symbol, open, high, low, close, volume, bid, ask)
+        VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT (ts_minute, symbol) DO UPDATE SET
+            open=excluded.open, high=excluded.high, low=excluded.low,
+            close=excluded.close, volume=excluded.volume,
+            bid=excluded.bid, ask=excluded.ask
+        """,
+        rows,
+    )
+    conn.commit()
+    return len(rows)
+
+
 def prune_invx_bars(conn, hours: int = 25) -> int:
     """Delete InvX 1m bars older than `hours`. Keeps ~25h by default to make
     24h synthesis robust against minor clock skew.
@@ -276,49 +350,80 @@ def prune_invx_bars(conn, hours: int = 25) -> int:
     return n if n is not None and n >= 0 else 0
 
 
-def synthesize_invx_24h(conn, symbol: str) -> dict:
-    """Compute 24h-rolling figures for one InvX symbol from the last 1440 bars.
+_EMPTY_SYNTH = {
+    "base_volume_24h": None, "quote_turnover_24h": None,
+    "high_24h": None, "low_24h": None, "change_pct_24h": None,
+}
 
-    Returns a dict with keys: base_volume_24h, quote_turnover_24h, high_24h,
-    low_24h, change_pct_24h. Any field that can't be computed (e.g. <2 bars)
-    is None. Quote turnover is approximated as SUM(volume × close) — exact
-    VWAP would need trade-level data we don't have.
+
+def synthesize_invx_24h_all(conn, hours: int = 24) -> dict[str, dict]:
+    """Batch-aggregate 24h figures for ALL InvX symbols in a single round-trip.
+
+    Server-side GROUP BY transfers only ~35 result rows (~3 KB) instead of
+    pulling ~50,000 bar rows (~2.5 MB) per cycle. Critical for staying inside
+    Neon free-tier egress (5 GB/month).
+
+    Quote turnover approximated as SUM(volume × close); exact VWAP would need
+    trade-level data we don't have. change_pct_24h derived from first/last
+    close inside the window via correlated subqueries that hit indexed
+    (symbol, ts_minute) PK lookups — both Postgres and SQLite plan these as
+    index scans, no extra egress.
+
+    Returns: {symbol: {base_volume_24h, quote_turnover_24h, high_24h,
+    low_24h, change_pct_24h}}. Symbols with no bars are absent from the dict.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(timespec="seconds")
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=int(hours))).isoformat(timespec="seconds")
     cur = conn.execute(
         """
-        SELECT close, volume, high, low
-        FROM invx_bars_1m
-        WHERE symbol = ? AND ts_minute >= ?
-        ORDER BY ts_minute ASC
+        WITH agg AS (
+            SELECT symbol,
+                   SUM(volume)         AS bv,
+                   SUM(volume * close) AS qto,
+                   MAX(high)           AS hi,
+                   MIN(low)            AS lo,
+                   MIN(ts_minute)      AS first_ts,
+                   MAX(ts_minute)      AS last_ts,
+                   COUNT(*)            AS n
+            FROM invx_bars_1m
+            WHERE ts_minute >= ?
+            GROUP BY symbol
+        )
+        SELECT a.symbol, a.bv, a.qto, a.hi, a.lo, a.n,
+               (SELECT close FROM invx_bars_1m b
+                 WHERE b.symbol = a.symbol AND b.ts_minute = a.first_ts) AS first_close,
+               (SELECT close FROM invx_bars_1m b
+                 WHERE b.symbol = a.symbol AND b.ts_minute = a.last_ts) AS last_close
+        FROM agg a
         """,
-        (symbol, cutoff),
+        (cutoff,),
     )
-    rows = cur.fetchall()
-    if not rows:
-        return {
-            "base_volume_24h": None, "quote_turnover_24h": None,
-            "high_24h": None, "low_24h": None, "change_pct_24h": None,
-        }
-    closes = [r[0] for r in rows if r[0] is not None]
-    vols = [r[1] for r in rows if r[1] is not None]
-    highs = [r[2] for r in rows if r[2] is not None]
-    lows = [r[3] for r in rows if r[3] is not None]
-    base_vol = sum(vols) if vols else None
-    quote_turn = sum((r[0] or 0) * (r[1] or 0) for r in rows) if rows else None
-    high = max(highs) if highs else None
-    low = min(lows) if lows else None
-    if len(closes) >= 2 and closes[0]:
-        change_pct = (closes[-1] - closes[0]) / closes[0] * 100
-    else:
+    out: dict[str, dict] = {}
+    for row in cur.fetchall():
+        symbol, bv, qto, hi, lo, n, first_close, last_close = row
         change_pct = None
-    return {
-        "base_volume_24h": base_vol,
-        "quote_turnover_24h": quote_turn,
-        "high_24h": high,
-        "low_24h": low,
-        "change_pct_24h": change_pct,
-    }
+        if n and n >= 2 and first_close:
+            try:
+                change_pct = (last_close - first_close) / first_close * 100
+            except (TypeError, ZeroDivisionError):
+                change_pct = None
+        out[symbol] = {
+            "base_volume_24h": float(bv) if bv is not None else None,
+            "quote_turnover_24h": float(qto) if qto is not None else None,
+            "high_24h": float(hi) if hi is not None else None,
+            "low_24h": float(lo) if lo is not None else None,
+            "change_pct_24h": change_pct,
+        }
+    return out
+
+
+def synthesize_invx_24h(conn, symbol: str) -> dict:
+    """Single-symbol shim around synthesize_invx_24h_all() for compatibility.
+
+    DEPRECATED in hot paths — prefer synthesize_invx_24h_all() for batch
+    operation. Each call here triggers a full GROUP BY scan, so calling it
+    in a loop reverts the egress optimization.
+    """
+    return synthesize_invx_24h_all(conn).get(symbol, dict(_EMPTY_SYNTH))
 
 
 def turnover_share_by_venue(conn, date_str: str | None = None) -> dict:

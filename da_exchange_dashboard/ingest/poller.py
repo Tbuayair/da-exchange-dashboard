@@ -96,8 +96,8 @@ def poll_innovestx(conn) -> int:
         log.warning("innovestx: no THB symbols discovered")
         return 0
 
-    # Pass 1: fetch each symbol's latest 1m bar, store the bar, build the
-    # base ticker dict (with 24h fields still None).
+    # Pass 1: fetch each symbol's latest 1m bar, build the base ticker dict
+    # (with 24h fields still None). Defer DB writes — we batch-insert below.
     tickers: list[dict] = []
     raw_by_sym: dict[str, dict] = {}
     for sym in thb:
@@ -105,12 +105,19 @@ def poll_innovestx(conn) -> int:
             raw = innovestx.fetch_ticker(sym)
             if raw:
                 raw_by_sym[sym] = raw
-                store.insert_invx_bar(conn, sym, raw)
                 tickers.append(innovestx.normalize_ticker(raw))
         except Exception as e:
             log.warning("innovestx ticker %s failed: %s", sym, e)
 
-    # Pass 2: prune old bars + synthesize 24h figures from the rolling window.
+    # Pass 2: ONE batched insert for all bars + ONE batched synthesis query +
+    # one prune. Replaces the prior 35 inserts + 35 GROUP-BY scans pattern
+    # that blew the Neon free-tier egress quota in 5 days (~4.8 GB/day).
+    try:
+        store.insert_invx_bars_batch(conn, raw_by_sym)
+    except Exception as e:
+        log.warning("innovestx bars batch insert failed: %s", e)
+        conn.rollback()
+
     try:
         store.prune_invx_bars(conn, hours=25)
     except Exception as e:
@@ -118,9 +125,12 @@ def poll_innovestx(conn) -> int:
         conn.rollback()
 
     synthesized = 0
-    for t in tickers:
-        try:
-            agg = store.synthesize_invx_24h(conn, t["symbol"])
+    try:
+        agg_by_sym = store.synthesize_invx_24h_all(conn)
+        for t in tickers:
+            agg = agg_by_sym.get(t["symbol"])
+            if not agg:
+                continue
             t["base_volume_24h"] = agg["base_volume_24h"]
             t["quote_turnover_24h"] = agg["quote_turnover_24h"]
             t["high_24h"] = agg["high_24h"]
@@ -128,9 +138,9 @@ def poll_innovestx(conn) -> int:
             t["change_pct_24h"] = agg["change_pct_24h"]
             if agg["quote_turnover_24h"] is not None:
                 synthesized += 1
-        except Exception as e:
-            log.warning("innovestx synthesis %s failed: %s", t["symbol"], e)
-            conn.rollback()
+    except Exception as e:
+        log.warning("innovestx synthesis batch failed: %s", e)
+        conn.rollback()
 
     n = store.insert_tickers(conn, tickers)
     log.info("innovestx: %d THB tickers stored (%d with synth 24h)", n, synthesized)
@@ -178,12 +188,15 @@ def run_once() -> None:
                 log.error("%s (cg) poll failed: %s", venue_label, e)
                 conn.rollback()
         try:
-            latest = store.latest_tickers(conn)
-            written = store.upsert_daily_turnover(conn, latest)
-            log.info("daily_turnover: rolled up %d rows", written)
+            # Server-side rollup: INSERT INTO daily_turnover SELECT FROM
+            # latest_ticker. Zero data crosses the wire. Replaces the prior
+            # pattern of pulling latest_tickers back to the app first
+            # (~65 KB/cycle of avoidable egress = ~125 MB/day).
+            written = store.upsert_daily_turnover_from_latest(conn)
+            log.info("daily_turnover: rolled up %s rows", written)
         except Exception as e:
             log.error("daily_turnover rollup failed: %s", e)
-            _safe_rollback(conn)
+            conn.rollback()
     finally:
         conn.close()
 
